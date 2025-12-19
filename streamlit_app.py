@@ -151,6 +151,46 @@ def obtener_eventos_con_impacto():
         st.error(f"Error al obtener eventos: {str(e)}")
         return pd.DataFrame(), pd.DataFrame()
 
+@st.cache_data(ttl=300)
+def obtener_macro_2026():
+    """Obtiene score macro mensual de 2026 desde macro_regime_monthly_us."""
+    try:
+        res = (
+            supabase.table("macro_regime_monthly_us")
+            .select("anio,mes,score,regime,drivers,updated_at")
+            .eq("anio", 2026)
+            .order("mes", desc=False)
+            .execute()
+        )
+
+        df = pd.DataFrame(res.data or [])
+        if df.empty:
+            return df
+
+        df["mes"] = df["mes"].astype(int)
+        df["fecha"] = pd.to_datetime(df["anio"].astype(str) + "-" + df["mes"].astype(str) + "-01")
+        return df.sort_values("mes")
+    except Exception as e:
+        st.error(f"Error al cargar macro 2026: {e}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def obtener_macro_run_log():
+    """Obtiene la última corrida del job macro (macro_regime_run_log)."""
+    try:
+        res = (
+            supabase.table("macro_regime_run_log")
+            .select("run_at,status,summary,error")
+            .order("run_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return (res.data or [None])[0]
+    except Exception as e:
+        st.error(f"Error al cargar macro run log: {e}")
+        return None
+
 def obtener_impacto_evento(evento_nombre, sector, df_impactos):
     """Obtiene el impacto de un evento en un sector específico"""
     try:
@@ -458,12 +498,13 @@ else:
         categorias_permitidas.append('Noticia Externa')
     
     # Crear tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "🚦 Semáforo", 
         "📅 Calendario", 
         "🌐 Noticias Externas", 
         "✏️ Asignar Fechas",
-        "🗄️ Noticias Expiradas"
+        "🗄️ Noticias Expiradas",
+        "🌍 Macro (2026)"
     ])
     
     # TAB 1: SEMÁFORO
@@ -982,6 +1023,47 @@ else:
                                         st.rerun()
                                     else:
                                         st.error(mensaje)
+        # TAB 6: MACRO (2026)
+    with tab6:
+        st.subheader("🌍 Macro 2026 (score -2..+2)")
+
+        df_macro = obtener_macro_2026()
+        last_run = obtener_macro_run_log()
+
+        if df_macro.empty:
+            st.warning("⚠️ No hay datos en macro_regime_monthly_us para 2026 todavía.")
+        else:
+            st.line_chart(df_macro.set_index("fecha")["score"])
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Último score (mes 12)", float(df_macro["score"].iloc[-1]))
+            with col2:
+                st.metric("Régimen (mes 12)", str(df_macro["regime"].iloc[-1]))
+            with col3:
+                st.metric("Meses cargados", int(df_macro.shape[0]))
+
+            st.markdown("### Drivers (última corrida)")
+            drivers = df_macro["drivers"].iloc[-1] if "drivers" in df_macro.columns else []
+            if isinstance(drivers, list) and drivers:
+                cols = [c for c in ["name", "latest_value", "z_adj", "weight", "contribution"] if c in pd.DataFrame(drivers).columns]
+                st.dataframe(pd.DataFrame(drivers)[cols], use_container_width=True)
+            else:
+                st.info("No hay drivers disponibles en el campo drivers.")
+
+        st.markdown("---")
+        st.markdown("### Qué cambió (última corrida)")
+        if last_run and last_run.get("status") == "success":
+            summary = last_run.get("summary", {}) or {}
+            st.write(f"Run UTC: {last_run.get('run_at')}")
+            st.write(f"Score now: {summary.get('score_now')}")
+            st.write(f"Best driver: {summary.get('best_driver')}")
+            st.write(f"Worst driver: {summary.get('worst_driver')}")
+        elif last_run and last_run.get("status") == "error":
+            st.error(f"Última corrida falló: {last_run.get('error')}")
+        else:
+            st.info("No hay registros en macro_regime_run_log todavía.")
+
 
 st.markdown("---")
 st.markdown(
