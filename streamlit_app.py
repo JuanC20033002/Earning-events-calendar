@@ -176,20 +176,20 @@ def obtener_macro_2026():
 
 
 @st.cache_data(ttl=300)
-def obtener_macro_run_log():
-    """Obtiene la última corrida del job macro (macro_regime_run_log)."""
+def obtener_macro_run_logs(limit=2):
     try:
         res = (
             supabase.table("macro_regime_run_log")
             .select("run_at,status,summary,error")
             .order("run_at", desc=True)
-            .limit(1)
+            .limit(limit)
             .execute()
         )
-        return (res.data or [None])[0]
+        return res.data or []
     except Exception as e:
-        st.error(f"Error al cargar macro run log: {e}")
-        return None
+        st.error(f"Error al cargar macro run logs: {e}")
+        return []
+
 
 def obtener_impacto_evento(evento_nombre, sector, df_impactos):
     """Obtiene el impacto de un evento en un sector específico"""
@@ -1023,13 +1023,15 @@ else:
                                         st.rerun()
                                     else:
                                         st.error(mensaje)
+
         # TAB 6: MACRO (2026)
     with tab6:
         st.subheader("🌍 Macro 2026 (score -2..+2)")
 
         df_macro = obtener_macro_2026()
-        last_run = obtener_macro_run_log()
+        run_logs = obtener_macro_run_logs(limit=2)
 
+        # ----- Curva 2026 -----
         if df_macro.empty:
             st.warning("⚠️ No hay datos en macro_regime_monthly_us para 2026 todavía.")
         else:
@@ -1046,23 +1048,75 @@ else:
             st.markdown("### Drivers (última corrida)")
             drivers = df_macro["drivers"].iloc[-1] if "drivers" in df_macro.columns else []
             if isinstance(drivers, list) and drivers:
-                cols = [c for c in ["name", "latest_value", "z_adj", "weight", "contribution"] if c in pd.DataFrame(drivers).columns]
-                st.dataframe(pd.DataFrame(drivers)[cols], use_container_width=True)
+                df_drv = pd.DataFrame(drivers)
+                cols = [c for c in ["name", "latest_value", "z_adj", "weight", "contribution"] if c in df_drv.columns]
+                st.dataframe(df_drv[cols], use_container_width=True)
             else:
                 st.info("No hay drivers disponibles en el campo drivers.")
 
+        # ----- Qué cambió vs anterior -----
         st.markdown("---")
-        st.markdown("### Qué cambió (última corrida)")
-        if last_run and last_run.get("status") == "success":
-            summary = last_run.get("summary", {}) or {}
-            st.write(f"Run UTC: {last_run.get('run_at')}")
-            st.write(f"Score now: {summary.get('score_now')}")
-            st.write(f"Best driver: {summary.get('best_driver')}")
-            st.write(f"Worst driver: {summary.get('worst_driver')}")
-        elif last_run and last_run.get("status") == "error":
-            st.error(f"Última corrida falló: {last_run.get('error')}")
-        else:
+        st.markdown("### Qué cambió (vs corrida anterior)")
+
+        if not run_logs:
             st.info("No hay registros en macro_regime_run_log todavía.")
+        else:
+            last = run_logs[0]
+            prev = run_logs[1] if len(run_logs) > 1 else None
+
+            if last.get("status") == "error":
+                st.error(f"Última corrida falló: {last.get('error')}")
+            else:
+                s_last = last.get("summary", {}) or {}
+                st.write(f"Run UTC: {last.get('run_at')}")
+                st.write(f"Score now: {s_last.get('score_now')}")
+
+                if not prev or prev.get("status") != "success":
+                    st.info("Aún no hay una corrida anterior válida para comparar.")
+                else:
+                    s_prev = prev.get("summary", {}) or {}
+
+                    # Delta de score
+                    try:
+                        delta_score = float(s_last.get("score_now", 0)) - float(s_prev.get("score_now", 0))
+                    except Exception:
+                        delta_score = 0.0
+
+                    st.write(f"Δ score vs anterior: {delta_score:+.4f}")
+
+                    # Comparar drivers (por contribución)
+                    drv_last = s_last.get("drivers", []) or []
+                    drv_prev = s_prev.get("drivers", []) or []
+
+                    if not drv_last or not drv_prev:
+                        st.info("La comparación de drivers estará disponible después de 2 corridas que incluyan summary.drivers.")
+                        st.caption("Tip: actualiza scripts/update_macro.py para guardar summary['drivers']=drivers y corre el workflow 2 veces.")
+                    else:
+                        df_last = pd.DataFrame(drv_last)
+                        df_prev = pd.DataFrame(drv_prev)
+
+                        # match por key
+                        df = df_last.merge(
+                            df_prev[["key", "contribution"]],
+                            on="key",
+                            how="left",
+                            suffixes=("_last", "_prev")
+                        )
+                        df["contribution_prev"] = df["contribution_prev"].fillna(0.0)
+                        df["delta_contribution"] = df["contribution_last"] - df["contribution_prev"]
+
+                        # Top movers
+                        top_up = df.sort_values("delta_contribution", ascending=False).head(3)
+                        top_down = df.sort_values("delta_contribution", ascending=True).head(3)
+
+                        st.markdown("**Top ↑ (mejoró más)**")
+                        for _, r in top_up.iterrows():
+                            st.write(f"- {r.get('name', '')} ({r.get('key', '')}): {r['delta_contribution']:+.4f}")
+
+                        st.markdown("**Top ↓ (empeoró más)**")
+                        for _, r in top_down.iterrows():
+                            st.write(f"- {r.get('name', '')} ({r.get('key', '')}): {r['delta_contribution']:+.4f}")
+
 
 
 st.markdown("---")
