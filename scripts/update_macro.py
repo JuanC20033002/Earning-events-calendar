@@ -243,10 +243,13 @@ def main():
             "score_now": score_now,
             "best_driver": {"key": best["key"], "name": best["name"], "contribution": best["contribution"]},
             "worst_driver": {"key": worst["key"], "name": worst["name"], "contribution": worst["contribution"]},
+            "drivers": drivers,  # <-- NUEVO: snapshot completo para poder comparar
             "sp500_latest": extras.get("sp500_latest"),
             "sp500_month": extras.get("sp500_month"),
             "generated_at_utc": started.isoformat() + "Z",
         }
+
+
 
         supabase.table("macro_regime_run_log").insert({
             "status": "success",
