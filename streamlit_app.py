@@ -437,7 +437,7 @@ with st.sidebar:
     with col_anio:
         anio_seleccionado = st.selectbox(
             "Año",
-            range(2025, 2028),
+            range(2026, 2028),
             index=0
         )
     
