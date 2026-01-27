@@ -238,7 +238,6 @@ def remover_fechas_masivamente(df_eventos_expirados):
         eventos_removidos = 0
         eventos_fallidos = 0
 
-        # Filtrar solo eventos que NO sean Noticias Externas
         eventos_a_remover = df_eventos_expirados[df_eventos_expirados['categoria'] != 'Noticia Externa']
 
         for idx, evento in eventos_a_remover.iterrows():
@@ -252,7 +251,10 @@ def remover_fechas_masivamente(df_eventos_expirados):
             except:
                 eventos_fallidos += 1
 
-        return True, f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente" + (f" ({eventos_fallidos} fallidas)" if eventos_fallidos > 0 else "")
+        mensaje_base = f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente"
+        if eventos_fallidos > 0:
+            mensaje_base += f" ({eventos_fallidos} fallidas)"
+        return True, mensaje_base
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
 
@@ -672,8 +674,7 @@ else:
             tickers_seleccionados_display = st.multiselect(
                 "Busca por ticker o nombre de empresa",
                 opciones_tickers,
-                default=[],
-                placeholder="Ejemplo: AAPL, MSFT, JPM..."
+                default=[]
             )
 
             tickers_seleccionados = [tickers_dict[t] for t in tickers_seleccionados_display]
@@ -687,7 +688,6 @@ else:
                     st.markdown(f"### 📊 Comparativa de {len(tickers_seleccionados)} Acciones")
 
                     categorias = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
-
                     fig = go.Figure()
 
                     for ticker in tickers_seleccionados:
@@ -708,7 +708,7 @@ else:
                                 text=[datos_ticker['calidad'], datos_ticker['salud_financiera'], 
                                       datos_ticker['earnings'], datos_ticker['revisiones'], 
                                       datos_ticker['valoracion']],
-                                textposition='auto',
+                                textposition='auto'
                             ))
 
                     fig.update_layout(
@@ -723,7 +723,6 @@ else:
                     )
 
                     st.plotly_chart(fig, use_container_width=True)
-
                     st.markdown("---")
 
                 st.markdown("### 🔍 Detalle por Acción")
@@ -742,22 +741,20 @@ else:
                             overall_score = datos['overall']
                             st.markdown(f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>", unsafe_allow_html=True)
                             st.markdown(f"<h3 style='text-align: center; color: #666;'>Overall Score</h3>", unsafe_allow_html=True)
-
                             st.markdown("---")
-
                             st.markdown(f"**🏢 Empresa:** {datos['empresa']}")
                             st.markdown(f"**📌 Ticker:** `{datos['ticker']}`")
 
                         with col2:
-                            categorias = ['Calidad', 'Salud\nFinanciera', 'Earnings', 'Revisiones', 'Valoración']
-                            valores = [
+                            categorias_ind = ['Calidad', 'Salud\nFinanciera', 'Earnings', 'Revisiones', 'Valoración']
+                            valores_ind = [
                                 convertir_calificacion_a_numero(datos['calidad']),
                                 convertir_calificacion_a_numero(datos['salud_financiera']),
                                 convertir_calificacion_a_numero(datos['earnings']),
                                 convertir_calificacion_a_numero(datos['revisiones']),
                                 convertir_calificacion_a_numero(datos['valoracion'])
                             ]
-                            calificaciones = [
+                            calificaciones_ind = [
                                 datos['calidad'],
                                 datos['salud_financiera'],
                                 datos['earnings'],
@@ -765,29 +762,29 @@ else:
                                 datos['valoracion']
                             ]
 
-                            colores = []
-                            for val in valores:
+                            colores_ind = []
+                            for val in valores_ind:
                                 if val >= 10:
-                                    colores.append('#00CC66')
+                                    colores_ind.append('#00CC66')
                                 elif val >= 7:
-                                    colores.append('#FFD700')
+                                    colores_ind.append('#FFD700')
                                 elif val >= 4:
-                                    colores.append('#FF8C00')
+                                    colores_ind.append('#FF8C00')
                                 else:
-                                    colores.append('#FF4444')
+                                    colores_ind.append('#FF4444')
 
-                            fig_individual = go.Figure(data=[
+                            fig_ind = go.Figure(data=[
                                 go.Bar(
-                                    x=categorias,
-                                    y=valores,
-                                    text=calificaciones,
+                                    x=categorias_ind,
+                                    y=valores_ind,
+                                    text=calificaciones_ind,
                                     textposition='auto',
-                                    marker=dict(color=colores),
+                                    marker=dict(color=colores_ind),
                                     hovertemplate='<b>%{x}</b><br>Score: %{text}<br>Valor: %{y}<extra></extra>'
                                 )
                             ])
 
-                            fig_individual.update_layout(
+                            fig_ind.update_layout(
                                 title=f'Métricas Fundamentales - {ticker}',
                                 xaxis_title='Categorías',
                                 yaxis_title='Score (0-12)',
@@ -796,22 +793,22 @@ else:
                                 showlegend=False
                             )
 
-                            st.plotly_chart(fig_individual, use_container_width=True)
+                            st.plotly_chart(fig_ind, use_container_width=True)
 
                         st.markdown("---")
                         st.markdown("#### 📋 Resumen de Calificaciones")
 
-                        col_tabla1, col_tabla2, col_tabla3 = st.columns(3)
+                        col_t1, col_t2, col_t3 = st.columns(3)
 
-                        with col_tabla1:
+                        with col_t1:
                             st.metric("🎯 Calidad", datos['calidad'])
                             st.metric("💰 Salud Financiera", datos['salud_financiera'])
 
-                        with col_tabla2:
+                        with col_t2:
                             st.metric("📈 Earnings", datos['earnings'])
                             st.metric("📊 Revisiones", datos['revisiones'])
 
-                        with col_tabla3:
+                        with col_t3:
                             st.metric("💵 Valoración", datos['valoracion'])
                             st.metric("⭐ Overall", datos['overall'])
 
@@ -1357,19 +1354,17 @@ st.markdown(
     unsafe_allow_html=True
 
 
-                # Botón para remover todas las fechas expiradas (excepto Noticias Externas)
                 st.markdown("---")
                 st.markdown("### 🗑️ Acción Masiva")
 
-                # Contar eventos expirados que NO son Noticias Externas
                 eventos_a_remover = df_noticias[df_noticias['categoria'] != 'Noticia Externa']
                 num_eventos_removibles = len(eventos_a_remover)
 
                 if num_eventos_removibles > 0:
-                    col_boton1, col_boton2 = st.columns([2, 1])
-                    with col_boton1:
+                    col_b1, col_b2 = st.columns([2, 1])
+                    with col_b1:
                         st.info(f"📋 Se removerán las fechas de **{num_eventos_removibles} evento(s)** expirado(s) (excluye Noticias Externas)")
-                    with col_boton2:
+                    with col_b2:
                         if st.button("🗑️ Remover Todas las Fechas Expiradas", type="primary", use_container_width=True):
                             with st.spinner("Removiendo fechas..."):
                                 exito, mensaje = remover_fechas_masivamente(eventos_a_remover)
