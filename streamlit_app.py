@@ -644,7 +644,7 @@ else:
             # Filtro de selección
             st.markdown("### 🔍 Seleccionar Acciones")
 
-            # Crear opciones para el multiselect con formato "TICKER - Empresa"
+            # Crear opciones para el multiselect
             opciones_tickers = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
             tickers_dict = {f"{row['ticker']} - {row['empresa']}": row['ticker'] for _, row in df_pandora.iterrows()}
 
@@ -667,7 +667,6 @@ else:
                 if len(tickers_seleccionados) > 1:
                     st.markdown(f"### 📊 Comparativa de {len(tickers_seleccionados)} Acciones")
 
-                    # Preparar datos para el gráfico comparativo
                     categorias = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
 
                     fig = go.Figure()
@@ -708,7 +707,7 @@ else:
 
                     st.markdown("---")
 
-                # VISTA INDIVIDUAL PARA CADA ACCIÓN
+                # VISTA INDIVIDUAL
                 st.markdown("### 🔍 Detalle por Acción")
 
                 for ticker in tickers_seleccionados:
@@ -722,19 +721,16 @@ else:
                         col1, col2 = st.columns([1, 2])
 
                         with col1:
-                            # Overall Score en grande
                             overall_score = datos['overall']
                             st.markdown(f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>", unsafe_allow_html=True)
                             st.markdown(f"<h3 style='text-align: center; color: #666;'>Overall Score</h3>", unsafe_allow_html=True)
 
                             st.markdown("---")
 
-                            # Información adicional
                             st.markdown(f"**🏢 Empresa:** {datos['empresa']}")
                             st.markdown(f"**📌 Ticker:** `{datos['ticker']}`")
 
                         with col2:
-                            # Gráfico de barras individual
                             categorias = ['Calidad', 'Salud\nFinanciera', 'Earnings', 'Revisiones', 'Valoración']
                             valores = [
                                 convertir_calificacion_a_numero(datos['calidad']),
@@ -751,16 +747,15 @@ else:
                                 datos['valoracion']
                             ]
 
-                            # Colores según el score
                             colores = []
                             for val in valores:
-                                if val >= 10:  # A-, A, A+
+                                if val >= 10:
                                     colores.append('#00CC66')
-                                elif val >= 7:  # B-, B, B+
+                                elif val >= 7:
                                     colores.append('#FFD700')
-                                elif val >= 4:  # C-, C, C+
+                                elif val >= 4:
                                     colores.append('#FF8C00')
-                                else:  # D y menores
+                                else:
                                     colores.append('#FF4444')
 
                             fig_individual = go.Figure(data=[
@@ -785,7 +780,6 @@ else:
 
                             st.plotly_chart(fig_individual, use_container_width=True)
 
-                        # Tabla resumen
                         st.markdown("---")
                         st.markdown("#### 📋 Resumen de Calificaciones")
 
@@ -806,8 +800,8 @@ else:
                     st.markdown("")
 
     
-    # TAB 3: 2: CALENDARIO
-    with tab2:
+    # TAB 3: CALENDARIO
+    with tab3:
         st.subheader("📅 Eventos por Semana")
         
         df_filtrado = df_eventos[
