@@ -629,8 +629,6 @@ else:
                 st.markdown("🔴 **Muy Alto (4/4)**")
             with col5:
                 st.markdown("⚪ **Sin eventos**")
-    
-
 
     # TAB 2: PANDORA BUY
     with tab2:
@@ -807,8 +805,8 @@ else:
 
                     st.markdown("")
 
-    # TAB 3: CALENDARIO
-    with tab3:NDARIO
+    
+    # TAB 3: 2: CALENDARIO
     with tab2:
         st.subheader("📅 Eventos por Semana")
         
