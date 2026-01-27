@@ -232,6 +232,30 @@ def obtener_datos_ticker(df_pandora, ticker):
     except:
         return None
 
+def remover_fechas_masivamente(df_eventos_expirados):
+    """Remueve las fechas de todos los eventos expirados excepto Noticias Externas"""
+    try:
+        eventos_removidos = 0
+        eventos_fallidos = 0
+
+        # Filtrar solo eventos que NO sean Noticias Externas
+        eventos_a_remover = df_eventos_expirados[df_eventos_expirados['categoria'] != 'Noticia Externa']
+
+        for idx, evento in eventos_a_remover.iterrows():
+            try:
+                data = {
+                    "fecha": None,
+                    "ultima_actualizacion": datetime.now().isoformat()
+                }
+                supabase.table('eventos_unicos').update(data).eq('id', evento['id']).execute()
+                eventos_removidos += 1
+            except:
+                eventos_fallidos += 1
+
+        return True, f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente" + (f" ({eventos_fallidos} fallidas)" if eventos_fallidos > 0 else "")
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
+
 def obtener_impacto_evento(evento_nombre, sector, df_impactos):
     """Obtiene el impacto de un evento en un sector específico"""
     try:
@@ -635,16 +659,13 @@ else:
         st.subheader("📈 Pandora Buy - Análisis Fundamental")
         st.info("💡 Selecciona una o más acciones para ver su análisis fundamental")
 
-        # Obtener datos
         df_pandora = obtener_pandora_buy()
 
         if df_pandora.empty:
             st.warning("⚠️ No hay datos disponibles en Pandora Buy")
         else:
-            # Filtro de selección
             st.markdown("### 🔍 Seleccionar Acciones")
 
-            # Crear opciones para el multiselect
             opciones_tickers = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
             tickers_dict = {f"{row['ticker']} - {row['empresa']}": row['ticker'] for _, row in df_pandora.iterrows()}
 
@@ -655,7 +676,6 @@ else:
                 placeholder="Ejemplo: AAPL, MSFT, JPM..."
             )
 
-            # Convertir a tickers puros
             tickers_seleccionados = [tickers_dict[t] for t in tickers_seleccionados_display]
 
             if not tickers_seleccionados:
@@ -663,7 +683,6 @@ else:
             else:
                 st.markdown("---")
 
-                # VISTA COMPARATIVA (si hay más de una acción)
                 if len(tickers_seleccionados) > 1:
                     st.markdown(f"### 📊 Comparativa de {len(tickers_seleccionados)} Acciones")
 
@@ -707,7 +726,6 @@ else:
 
                     st.markdown("---")
 
-                # VISTA INDIVIDUAL
                 st.markdown("### 🔍 Detalle por Acción")
 
                 for ticker in tickers_seleccionados:
@@ -1337,4 +1355,33 @@ st.markdown(
     "📊 Economic Events Calendar | Powered by Streamlit & Supabase"
     "</div>",
     unsafe_allow_html=True
-)
+
+
+                # Botón para remover todas las fechas expiradas (excepto Noticias Externas)
+                st.markdown("---")
+                st.markdown("### 🗑️ Acción Masiva")
+
+                # Contar eventos expirados que NO son Noticias Externas
+                eventos_a_remover = df_noticias[df_noticias['categoria'] != 'Noticia Externa']
+                num_eventos_removibles = len(eventos_a_remover)
+
+                if num_eventos_removibles > 0:
+                    col_boton1, col_boton2 = st.columns([2, 1])
+                    with col_boton1:
+                        st.info(f"📋 Se removerán las fechas de **{num_eventos_removibles} evento(s)** expirado(s) (excluye Noticias Externas)")
+                    with col_boton2:
+                        if st.button("🗑️ Remover Todas las Fechas Expiradas", type="primary", use_container_width=True):
+                            with st.spinner("Removiendo fechas..."):
+                                exito, mensaje = remover_fechas_masivamente(eventos_a_remover)
+                                if exito:
+                                    st.success(mensaje)
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error(mensaje)
+                else:
+                    st.info("✅ No hay eventos removibles (solo quedan Noticias Externas)")
+
+                st.markdown("---")
+
+            )
