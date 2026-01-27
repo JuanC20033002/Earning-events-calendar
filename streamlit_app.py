@@ -251,10 +251,10 @@ def remover_fechas_masivamente(df_eventos_expirados):
             except:
                 eventos_fallidos += 1
 
-        mensaje_base = f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente"
+        mensaje = f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente"
         if eventos_fallidos > 0:
-            mensaje_base += f" ({eventos_fallidos} fallidas)"
-        return True, mensaje_base
+            mensaje += f" ({eventos_fallidos} fallidas)"
+        return True, mensaje
     except Exception as e:
         return False, f"❌ Error: {str(e)}"
 
@@ -668,8 +668,12 @@ else:
         else:
             st.markdown("### 🔍 Seleccionar Acciones")
 
-            opciones_tickers = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
-            tickers_dict = {f"{row['ticker']} - {row['empresa']}": row['ticker'] for _, row in df_pandora.iterrows()}
+            opciones_tickers = []
+            tickers_dict = {}
+            for _, row in df_pandora.iterrows():
+                opcion = f"{row['ticker']} - {row['empresa']}"
+                opciones_tickers.append(opcion)
+                tickers_dict[opcion] = row['ticker']
 
             tickers_seleccionados_display = st.multiselect(
                 "Busca por ticker o nombre de empresa",
@@ -739,14 +743,20 @@ else:
 
                         with col1:
                             overall_score = datos['overall']
-                            st.markdown(f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>", unsafe_allow_html=True)
-                            st.markdown(f"<h3 style='text-align: center; color: #666;'>Overall Score</h3>", unsafe_allow_html=True)
+                            st.markdown(
+                                f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>",
+                                unsafe_allow_html=True
+                            )
+                            st.markdown(
+                                "<h3 style='text-align: center; color: #666;'>Overall Score</h3>",
+                                unsafe_allow_html=True
+                            )
                             st.markdown("---")
                             st.markdown(f"**🏢 Empresa:** {datos['empresa']}")
                             st.markdown(f"**📌 Ticker:** `{datos['ticker']}`")
 
                         with col2:
-                            categorias_ind = ['Calidad', 'Salud\nFinanciera', 'Earnings', 'Revisiones', 'Valoración']
+                            categorias_ind = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
                             valores_ind = [
                                 convertir_calificacion_a_numero(datos['calidad']),
                                 convertir_calificacion_a_numero(datos['salud_financiera']),
@@ -779,8 +789,7 @@ else:
                                     y=valores_ind,
                                     text=calificaciones_ind,
                                     textposition='auto',
-                                    marker=dict(color=colores_ind),
-                                    hovertemplate='<b>%{x}</b><br>Score: %{text}<br>Valor: %{y}<extra></extra>'
+                                    marker=dict(color=colores_ind)
                                 )
                             ])
 
@@ -1365,7 +1374,7 @@ st.markdown(
                     with col_b1:
                         st.info(f"📋 Se removerán las fechas de **{num_eventos_removibles} evento(s)** expirado(s) (excluye Noticias Externas)")
                     with col_b2:
-                        if st.button("🗑️ Remover Todas las Fechas Expiradas", type="primary", use_container_width=True):
+                        if st.button("🗑️ Remover Todas", type="primary", use_container_width=True):
                             with st.spinner("Removiendo fechas..."):
                                 exito, mensaje = remover_fechas_masivamente(eventos_a_remover)
                                 if exito:
