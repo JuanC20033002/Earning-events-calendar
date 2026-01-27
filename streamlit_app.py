@@ -1118,7 +1118,7 @@ else:
         else:
             df_noticias = df_eventos[
                 (df_eventos['fecha'].notna()) &
-                (df_eventos['fecha'].dt.date < fecha_hoy)
+                (df_eventos['fecha'].dt.date <= fecha_hoy)
             ].copy()
         
         if df_noticias.empty:
