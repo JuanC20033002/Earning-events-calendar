@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import datetime, timedelta, time, date
 import calendar
 import os
-import plotly.graph_objects as go
 
 # ==========================================
 # CONFIGURACIÓN
@@ -191,67 +190,6 @@ def obtener_macro_run_logs(limit=2):
         st.error(f"Error al cargar macro run logs: {e}")
         return []
 
-
-
-# ==========================================
-# FUNCIONES PANDORA BUY
-# ==========================================
-
-def convertir_calificacion_a_numero(calificacion):
-    """Convierte calificaciones (A+, A, A-, etc.) a valores numéricos"""
-    conversion = {
-        'A+': 12, 'A': 11, 'A-': 10,
-        'B+': 9, 'B': 8, 'B-': 7,
-        'C+': 6, 'C': 5, 'C-': 4,
-        'D+': 3, 'D': 2, 'D-': 1,
-        'F': 0
-    }
-    return conversion.get(calificacion.strip(), 0)
-
-@st.cache_data(ttl=600)
-def obtener_pandora_buy():
-    """Obtiene todos los datos de Pandora Buy"""
-    try:
-        response = supabase.table('pandora_buy').select('*').order('ticker').execute()
-        if not response.data:
-            return pd.DataFrame()
-        df = pd.DataFrame(response.data)
-        return df
-    except Exception as e:
-        st.error(f"Error al obtener datos de Pandora Buy: {str(e)}")
-        return pd.DataFrame()
-
-def obtener_datos_ticker(df_pandora, ticker):
-    """Obtiene los datos de un ticker específico"""
-    try:
-        resultado = df_pandora[df_pandora['ticker'] == ticker]
-        if not resultado.empty:
-            return resultado.iloc[0]
-        return None
-    except:
-        return None
-
-def remover_fechas_masivamente(df_eventos_expirados):
-    """Remueve las fechas de todos los eventos expirados excepto Noticias Externas"""
-    try:
-        eventos_removidos = 0
-        eventos_fallidos = 0
-        eventos_a_remover = df_eventos_expirados[df_eventos_expirados['categoria'] != 'Noticia Externa']
-
-        for idx, evento in eventos_a_remover.iterrows():
-            try:
-                data = {"fecha": None, "ultima_actualizacion": datetime.now().isoformat()}
-                supabase.table('eventos_unicos').update(data).eq('id', evento['id']).execute()
-                eventos_removidos += 1
-            except:
-                eventos_fallidos += 1
-
-        mensaje = f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente"
-        if eventos_fallidos > 0:
-            mensaje += f" ({eventos_fallidos} fallidas)"
-        return True, mensaje
-    except Exception as e:
-        return False, f"❌ Error: {str(e)}"
 
 def obtener_impacto_evento(evento_nombre, sector, df_impactos):
     """Obtiene el impacto de un evento en un sector específico"""
@@ -499,7 +437,7 @@ with st.sidebar:
     with col_anio:
         anio_seleccionado = st.selectbox(
             "Año",
-            range(2026, 2028),
+            range(2025, 2028),
             index=0
         )
     
@@ -560,9 +498,8 @@ else:
         categorias_permitidas.append('Noticia Externa')
     
     # Crear tabs
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "🚦 Semáforo",
-        "📈 Pandora Buy",
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🚦 Semáforo", 
         "📅 Calendario", 
         "🌐 Noticias Externas", 
         "✏️ Asignar Fechas",
@@ -650,96 +587,9 @@ else:
                 st.markdown("🔴 **Muy Alto (4/4)**")
             with col5:
                 st.markdown("⚪ **Sin eventos**")
-
-    # TAB 2: PANDORA BUY
-    with tab2:
-        st.subheader("📈 Pandora Buy - Análisis Fundamental")
-
-        df_pandora = obtener_pandora_buy()
-
-        if df_pandora.empty:
-            st.warning("⚠️ No hay datos disponibles")
-        else:
-            opciones = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
-            tickers_dict = {f"{row['ticker']} - {row['empresa']}": row['ticker'] for _, row in df_pandora.iterrows()}
-
-            seleccion = st.multiselect("Selecciona acciones", opciones)
-            tickers = [tickers_dict[s] for s in seleccion]
-
-            if tickers:
-                st.markdown("---")
-
-                if len(tickers) > 1:
-                    st.markdown(f"### Comparativa de {len(tickers)} Acciones")
-
-                    cats = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
-                    fig = go.Figure()
-
-                    for t in tickers:
-                        d = obtener_datos_ticker(df_pandora, t)
-                        if d is not None:
-                            vals = [
-                                convertir_calificacion_a_numero(d['calidad']),
-                                convertir_calificacion_a_numero(d['salud_financiera']),
-                                convertir_calificacion_a_numero(d['earnings']),
-                                convertir_calificacion_a_numero(d['revisiones']),
-                                convertir_calificacion_a_numero(d['valoracion'])
-                            ]
-                            fig.add_trace(go.Bar(
-                                name=t, x=cats, y=vals,
-                                text=[d['calidad'], d['salud_financiera'], d['earnings'], d['revisiones'], d['valoracion']],
-                                textposition='auto'
-                            ))
-
-                    fig.update_layout(barmode='group', yaxis=dict(range=[0, 13]), height=500)
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.markdown("---")
-
-                for t in tickers:
-                    d = obtener_datos_ticker(df_pandora, t)
-                    if d is None:
-                        continue
-
-                    with st.expander(f"{t} - {d['empresa']}", expanded=True):
-                        c1, c2 = st.columns([1, 2])
-
-                        with c1:
-                            st.markdown(f"# {d['overall']}")
-                            st.caption("Overall Score")
-                            st.markdown("---")
-                            st.write(f"**Empresa:** {d['empresa']}")
-                            st.write(f"**Ticker:** {d['ticker']}")
-
-                        with c2:
-                            vals2 = [
-                                convertir_calificacion_a_numero(d['calidad']),
-                                convertir_calificacion_a_numero(d['salud_financiera']),
-                                convertir_calificacion_a_numero(d['earnings']),
-                                convertir_calificacion_a_numero(d['revisiones']),
-                                convertir_calificacion_a_numero(d['valoracion'])
-                            ]
-                            labels2 = [d['calidad'], d['salud_financiera'], d['earnings'], d['revisiones'], d['valoracion']]
-                            colors2 = ['#00CC66' if v >= 10 else '#FFD700' if v >= 7 else '#FF8C00' if v >= 4 else '#FF4444' for v in vals2]
-
-                            fig2 = go.Figure(data=[go.Bar(x=cats, y=vals2, text=labels2, textposition='auto', marker=dict(color=colors2))])
-                            fig2.update_layout(yaxis=dict(range=[0, 13]), height=400, showlegend=False)
-                            st.plotly_chart(fig2, use_container_width=True)
-
-                        st.markdown("---")
-                        ct1, ct2, ct3 = st.columns(3)
-                        with ct1:
-                            st.metric("Calidad", d['calidad'])
-                            st.metric("Salud Financiera", d['salud_financiera'])
-                        with ct2:
-                            st.metric("Earnings", d['earnings'])
-                            st.metric("Revisiones", d['revisiones'])
-                        with ct3:
-                            st.metric("Valoración", d['valoracion'])
-                            st.metric("Overall", d['overall'])
-
     
-    # TAB 3: CALENDARIO
-    with tab3:
+    # TAB 2: CALENDARIO
+    with tab2:
         st.subheader("📅 Eventos por Semana")
         
         df_filtrado = df_eventos[
@@ -874,8 +724,8 @@ else:
                         
                         st.markdown("---")
     
-    # TAB 4: NOTICIAS EXTERNAS
-    with tab4:
+    # TAB 3: NOTICIAS EXTERNAS
+    with tab3:
         st.subheader("🌐 Agregar Noticia Externa")
         st.info("📌 Crea eventos personalizados con impacto en uno o varios sectores.")
         
@@ -970,8 +820,8 @@ else:
                     if noticia.get('descripcion'):
                         st.markdown(f"**📝 Descripción:** {noticia['descripcion']}")
     
-    # TAB 5: ASIGNAR FECHAS
-    with tab5:
+    # TAB 4: ASIGNAR FECHAS
+    with tab4:
         st.subheader("✏️ Asignar Fechas Manualmente")
         st.info("📌 Usa esta sección para agregar fechas a eventos que aún no las tienen.")
         
@@ -1032,8 +882,8 @@ else:
                             else:
                                 st.error(mensaje)
     
-    # TAB 6: NOTICIAS EXPIRADAS
-    with tab6:
+    # TAB 5: NOTICIAS EXPIRADAS
+    with tab5:
         st.subheader("🗄️ Gestión de Noticias con Fecha")
         
         col_toggle1, col_toggle2 = st.columns(2)
@@ -1159,7 +1009,7 @@ else:
                                 
                                 nueva_fecha = st.date_input(
                                     "Selecciona nueva fecha",
-                                    value=evento['fecha'].date() if evento['fecha'].date() >= fecha_hoy else fecha_minima,
+                                    value=fecha_minima,
                                     min_value=fecha_minima,
                                     key=f"fecha_{evento['id']}"
                                 )
@@ -1174,8 +1024,8 @@ else:
                                     else:
                                         st.error(mensaje)
 
-        # TAB 7: MACRO (2026)
-    with tab7:
+        # TAB 6: MACRO (2026)
+    with tab6:
         st.subheader("🌍 Macro 2026 (score -2..+2)")
 
         df_macro = obtener_macro_2026()
@@ -1275,31 +1125,4 @@ st.markdown(
     "📊 Economic Events Calendar | Powered by Streamlit & Supabase"
     "</div>",
     unsafe_allow_html=True
-
-
-                st.markdown("---")
-                st.markdown("### 🗑️ Acción Masiva")
-
-                eventos_a_remover = df_noticias[df_noticias['categoria'] != 'Noticia Externa']
-                num_removibles = len(eventos_a_remover)
-
-                if num_removibles > 0:
-                    cb1, cb2 = st.columns([2, 1])
-                    with cb1:
-                        st.info(f"📋 Se removerán {num_removibles} fecha(s) (excluye Noticias Externas)")
-                    with cb2:
-                        if st.button("🗑️ Remover Todas", type="primary", use_container_width=True):
-                            with st.spinner("Removiendo..."):
-                                exito, msg = remover_fechas_masivamente(eventos_a_remover)
-                                if exito:
-                                    st.success(msg)
-                                    st.cache_data.clear()
-                                    st.rerun()
-                                else:
-                                    st.error(msg)
-                else:
-                    st.info("✅ No hay eventos removibles")
-
-                st.markdown("---")
-
-            )
+)
