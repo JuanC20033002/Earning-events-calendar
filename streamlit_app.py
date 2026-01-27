@@ -215,7 +215,6 @@ def obtener_pandora_buy():
         response = supabase.table('pandora_buy').select('*').order('ticker').execute()
         if not response.data:
             return pd.DataFrame()
-
         df = pd.DataFrame(response.data)
         return df
     except Exception as e:
@@ -231,6 +230,28 @@ def obtener_datos_ticker(df_pandora, ticker):
         return None
     except:
         return None
+
+def remover_fechas_masivamente(df_eventos_expirados):
+    """Remueve las fechas de todos los eventos expirados excepto Noticias Externas"""
+    try:
+        eventos_removidos = 0
+        eventos_fallidos = 0
+        eventos_a_remover = df_eventos_expirados[df_eventos_expirados['categoria'] != 'Noticia Externa']
+
+        for idx, evento in eventos_a_remover.iterrows():
+            try:
+                data = {"fecha": None, "ultima_actualizacion": datetime.now().isoformat()}
+                supabase.table('eventos_unicos').update(data).eq('id', evento['id']).execute()
+                eventos_removidos += 1
+            except:
+                eventos_fallidos += 1
+
+        mensaje = f"✅ {eventos_removidos} fecha(s) removida(s) exitosamente"
+        if eventos_fallidos > 0:
+            mensaje += f" ({eventos_fallidos} fallidas)"
+        return True, mensaje
+    except Exception as e:
+        return False, f"❌ Error: {str(e)}"
 
 def obtener_impacto_evento(evento_nombre, sector, df_impactos):
     """Obtiene el impacto de un evento en un sector específico"""
@@ -633,171 +654,88 @@ else:
     # TAB 2: PANDORA BUY
     with tab2:
         st.subheader("📈 Pandora Buy - Análisis Fundamental")
-        st.info("💡 Selecciona una o más acciones para ver su análisis fundamental")
 
-        # Obtener datos
         df_pandora = obtener_pandora_buy()
 
         if df_pandora.empty:
-            st.warning("⚠️ No hay datos disponibles en Pandora Buy")
+            st.warning("⚠️ No hay datos disponibles")
         else:
-            # Filtro de selección
-            st.markdown("### 🔍 Seleccionar Acciones")
-
-            # Crear opciones para el multiselect
-            opciones_tickers = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
+            opciones = [f"{row['ticker']} - {row['empresa']}" for _, row in df_pandora.iterrows()]
             tickers_dict = {f"{row['ticker']} - {row['empresa']}": row['ticker'] for _, row in df_pandora.iterrows()}
 
-            tickers_seleccionados_display = st.multiselect(
-                "Busca por ticker o nombre de empresa",
-                opciones_tickers,
-                default=[],
-                placeholder="Ejemplo: AAPL, MSFT, JPM..."
-            )
+            seleccion = st.multiselect("Selecciona acciones", opciones)
+            tickers = [tickers_dict[s] for s in seleccion]
 
-            # Convertir a tickers puros
-            tickers_seleccionados = [tickers_dict[t] for t in tickers_seleccionados_display]
-
-            if not tickers_seleccionados:
-                st.info("👆 Selecciona una o más acciones para comenzar")
-            else:
+            if tickers:
                 st.markdown("---")
 
-                # VISTA COMPARATIVA (si hay más de una acción)
-                if len(tickers_seleccionados) > 1:
-                    st.markdown(f"### 📊 Comparativa de {len(tickers_seleccionados)} Acciones")
+                if len(tickers) > 1:
+                    st.markdown(f"### Comparativa de {len(tickers)} Acciones")
 
-                    categorias = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
-
+                    cats = ['Calidad', 'Salud Financiera', 'Earnings', 'Revisiones', 'Valoración']
                     fig = go.Figure()
 
-                    for ticker in tickers_seleccionados:
-                        datos_ticker = obtener_datos_ticker(df_pandora, ticker)
-                        if datos_ticker is not None:
-                            valores = [
-                                convertir_calificacion_a_numero(datos_ticker['calidad']),
-                                convertir_calificacion_a_numero(datos_ticker['salud_financiera']),
-                                convertir_calificacion_a_numero(datos_ticker['earnings']),
-                                convertir_calificacion_a_numero(datos_ticker['revisiones']),
-                                convertir_calificacion_a_numero(datos_ticker['valoracion'])
+                    for t in tickers:
+                        d = obtener_datos_ticker(df_pandora, t)
+                        if d is not None:
+                            vals = [
+                                convertir_calificacion_a_numero(d['calidad']),
+                                convertir_calificacion_a_numero(d['salud_financiera']),
+                                convertir_calificacion_a_numero(d['earnings']),
+                                convertir_calificacion_a_numero(d['revisiones']),
+                                convertir_calificacion_a_numero(d['valoracion'])
                             ]
-
                             fig.add_trace(go.Bar(
-                                name=ticker,
-                                x=categorias,
-                                y=valores,
-                                text=[datos_ticker['calidad'], datos_ticker['salud_financiera'], 
-                                      datos_ticker['earnings'], datos_ticker['revisiones'], 
-                                      datos_ticker['valoracion']],
-                                textposition='auto',
+                                name=t, x=cats, y=vals,
+                                text=[d['calidad'], d['salud_financiera'], d['earnings'], d['revisiones'], d['valoracion']],
+                                textposition='auto'
                             ))
 
-                    fig.update_layout(
-                        barmode='group',
-                        title='Comparación de Métricas Fundamentales',
-                        xaxis_title='Categorías',
-                        yaxis_title='Score (0-12)',
-                        yaxis=dict(range=[0, 13]),
-                        height=500,
-                        showlegend=True,
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-                    )
-
+                    fig.update_layout(barmode='group', yaxis=dict(range=[0, 13]), height=500)
                     st.plotly_chart(fig, use_container_width=True)
-
                     st.markdown("---")
 
-                # VISTA INDIVIDUAL
-                st.markdown("### 🔍 Detalle por Acción")
-
-                for ticker in tickers_seleccionados:
-                    datos = obtener_datos_ticker(df_pandora, ticker)
-
-                    if datos is None:
-                        st.error(f"❌ No se encontraron datos para {ticker}")
+                for t in tickers:
+                    d = obtener_datos_ticker(df_pandora, t)
+                    if d is None:
                         continue
 
-                    with st.expander(f"📊 {ticker} - {datos['empresa']}", expanded=True):
-                        col1, col2 = st.columns([1, 2])
+                    with st.expander(f"{t} - {d['empresa']}", expanded=True):
+                        c1, c2 = st.columns([1, 2])
 
-                        with col1:
-                            overall_score = datos['overall']
-                            st.markdown(f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>", unsafe_allow_html=True)
-                            st.markdown(f"<h3 style='text-align: center; color: #666;'>Overall Score</h3>", unsafe_allow_html=True)
-
+                        with c1:
+                            st.markdown(f"# {d['overall']}")
+                            st.caption("Overall Score")
                             st.markdown("---")
+                            st.write(f"**Empresa:** {d['empresa']}")
+                            st.write(f"**Ticker:** {d['ticker']}")
 
-                            st.markdown(f"**🏢 Empresa:** {datos['empresa']}")
-                            st.markdown(f"**📌 Ticker:** `{datos['ticker']}`")
-
-                        with col2:
-                            categorias = ['Calidad', 'Salud\nFinanciera', 'Earnings', 'Revisiones', 'Valoración']
-                            valores = [
-                                convertir_calificacion_a_numero(datos['calidad']),
-                                convertir_calificacion_a_numero(datos['salud_financiera']),
-                                convertir_calificacion_a_numero(datos['earnings']),
-                                convertir_calificacion_a_numero(datos['revisiones']),
-                                convertir_calificacion_a_numero(datos['valoracion'])
+                        with c2:
+                            vals2 = [
+                                convertir_calificacion_a_numero(d['calidad']),
+                                convertir_calificacion_a_numero(d['salud_financiera']),
+                                convertir_calificacion_a_numero(d['earnings']),
+                                convertir_calificacion_a_numero(d['revisiones']),
+                                convertir_calificacion_a_numero(d['valoracion'])
                             ]
-                            calificaciones = [
-                                datos['calidad'],
-                                datos['salud_financiera'],
-                                datos['earnings'],
-                                datos['revisiones'],
-                                datos['valoracion']
-                            ]
+                            labels2 = [d['calidad'], d['salud_financiera'], d['earnings'], d['revisiones'], d['valoracion']]
+                            colors2 = ['#00CC66' if v >= 10 else '#FFD700' if v >= 7 else '#FF8C00' if v >= 4 else '#FF4444' for v in vals2]
 
-                            colores = []
-                            for val in valores:
-                                if val >= 10:
-                                    colores.append('#00CC66')
-                                elif val >= 7:
-                                    colores.append('#FFD700')
-                                elif val >= 4:
-                                    colores.append('#FF8C00')
-                                else:
-                                    colores.append('#FF4444')
-
-                            fig_individual = go.Figure(data=[
-                                go.Bar(
-                                    x=categorias,
-                                    y=valores,
-                                    text=calificaciones,
-                                    textposition='auto',
-                                    marker=dict(color=colores),
-                                    hovertemplate='<b>%{x}</b><br>Score: %{text}<br>Valor: %{y}<extra></extra>'
-                                )
-                            ])
-
-                            fig_individual.update_layout(
-                                title=f'Métricas Fundamentales - {ticker}',
-                                xaxis_title='Categorías',
-                                yaxis_title='Score (0-12)',
-                                yaxis=dict(range=[0, 13]),
-                                height=400,
-                                showlegend=False
-                            )
-
-                            st.plotly_chart(fig_individual, use_container_width=True)
+                            fig2 = go.Figure(data=[go.Bar(x=cats, y=vals2, text=labels2, textposition='auto', marker=dict(color=colors2))])
+                            fig2.update_layout(yaxis=dict(range=[0, 13]), height=400, showlegend=False)
+                            st.plotly_chart(fig2, use_container_width=True)
 
                         st.markdown("---")
-                        st.markdown("#### 📋 Resumen de Calificaciones")
-
-                        col_tabla1, col_tabla2, col_tabla3 = st.columns(3)
-
-                        with col_tabla1:
-                            st.metric("🎯 Calidad", datos['calidad'])
-                            st.metric("💰 Salud Financiera", datos['salud_financiera'])
-
-                        with col_tabla2:
-                            st.metric("📈 Earnings", datos['earnings'])
-                            st.metric("📊 Revisiones", datos['revisiones'])
-
-                        with col_tabla3:
-                            st.metric("💵 Valoración", datos['valoracion'])
-                            st.metric("⭐ Overall", datos['overall'])
-
-                    st.markdown("")
+                        ct1, ct2, ct3 = st.columns(3)
+                        with ct1:
+                            st.metric("Calidad", d['calidad'])
+                            st.metric("Salud Financiera", d['salud_financiera'])
+                        with ct2:
+                            st.metric("Earnings", d['earnings'])
+                            st.metric("Revisiones", d['revisiones'])
+                        with ct3:
+                            st.metric("Valoración", d['valoracion'])
+                            st.metric("Overall", d['overall'])
 
     
     # TAB 3: CALENDARIO
@@ -1118,7 +1056,7 @@ else:
         else:
             df_noticias = df_eventos[
                 (df_eventos['fecha'].notna()) &
-                (df_eventos['fecha'].dt.date <= fecha_hoy)
+                (df_eventos['fecha'].dt.date < fecha_hoy)
             ].copy()
         
         if df_noticias.empty:
@@ -1337,4 +1275,31 @@ st.markdown(
     "📊 Economic Events Calendar | Powered by Streamlit & Supabase"
     "</div>",
     unsafe_allow_html=True
-)
+
+
+                st.markdown("---")
+                st.markdown("### 🗑️ Acción Masiva")
+
+                eventos_a_remover = df_noticias[df_noticias['categoria'] != 'Noticia Externa']
+                num_removibles = len(eventos_a_remover)
+
+                if num_removibles > 0:
+                    cb1, cb2 = st.columns([2, 1])
+                    with cb1:
+                        st.info(f"📋 Se removerán {num_removibles} fecha(s) (excluye Noticias Externas)")
+                    with cb2:
+                        if st.button("🗑️ Remover Todas", type="primary", use_container_width=True):
+                            with st.spinner("Removiendo..."):
+                                exito, msg = remover_fechas_masivamente(eventos_a_remover)
+                                if exito:
+                                    st.success(msg)
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                else:
+                    st.info("✅ No hay eventos removibles")
+
+                st.markdown("---")
+
+            )
