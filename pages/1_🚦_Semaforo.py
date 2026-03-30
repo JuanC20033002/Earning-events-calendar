@@ -196,7 +196,7 @@ if master_df.empty:
     st.warning("No events are available.")
     st.stop()
 
-sectors = ["General"] + get_available_sectors()
+sectors = ["General"] + [s for s in get_available_sectors() if s != "General"]
 
 with st.sidebar:
     st.header("Filters")
@@ -252,15 +252,15 @@ with st.sidebar:
 
 allowed_categories = []
 if show_economic:
-    allowed_categories.append("Economic Event")
+    allowed_categories.extend(["Economic Event", "Evento Económico", "Evento Econmico"])
 if show_mag7:
     allowed_categories.append("Magnificent 7")
 if show_dow:
     allowed_categories.append("Dow Jones 30")
 if show_top3:
-    allowed_categories.append("Top 3 Sector")
+    allowed_categories.extend(["Top 3 Sector", "3 big companies for each sector"])
 if show_external:
-    allowed_categories.append("External News")
+    allowed_categories.extend(["External News", "Noticia Externa"])
 
 display_df = master_df.copy()
 display_df = display_df[display_df["date"].notna()].copy()
@@ -271,11 +271,12 @@ else:
     display_df = pd.DataFrame(columns=display_df.columns)
 
 if not display_df.empty:
-    display_df["impact_score"] = display_df.apply(
-        lambda row: get_row_impact(row, selected_sector),
-        axis=1
+    display_df["impact_score"] = display_df["event_name"].apply(
+        lambda event_name: get_row_impact(event_name, selected_sector)
     )
     display_df = display_df[display_df["impact_score"] >= min_impact].copy()
+else:
+    display_df["impact_score"] = []
 
 st.markdown("### Select months")
 
