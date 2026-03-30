@@ -9,6 +9,39 @@ from data_loader import build_master_events_df, get_available_sectors, get_row_i
 st.set_page_config(page_title="Calendar", page_icon="🗓️", layout="wide")
 
 
+st.markdown(
+    """
+    <style>
+    .badge {
+        display:inline-block;
+        padding:4px 10px;
+        border-radius:999px;
+        font-size:0.75rem;
+        font-weight:700;
+        margin-right:6px;
+        margin-bottom:6px;
+    }
+    .event-card {
+        border:1px solid rgba(255,255,255,0.08);
+        border-radius:12px;
+        padding:14px 16px;
+        margin-bottom:12px;
+        background:rgba(255,255,255,0.02);
+    }
+    .muted-text {
+        font-size:0.9rem;
+        opacity:0.8;
+    }
+    .small-muted {
+        font-size:0.82rem;
+        opacity:0.72;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 def get_weeks_of_month(year: int, month: int):
     first_day = datetime(year, month, 1).date()
     last_day = datetime(year, month, calendar.monthrange(year, month)[1]).date()
@@ -38,7 +71,20 @@ def get_weeks_of_month(year: int, month: int):
     return unique_weeks
 
 
-def category_badge(category: str) -> str:
+def impact_badge_html(score: int) -> str:
+    if score >= 4:
+        label, bg, fg = "Very High (4/4)", "#dc3545", "white"
+    elif score == 3:
+        label, bg, fg = "High (3/4)", "#fd7e14", "white"
+    elif score == 2:
+        label, bg, fg = "Medium (2/4)", "#ffc107", "black"
+    else:
+        label, bg, fg = "Low (1/4)", "#198754", "white"
+
+    return f'<span class="badge" style="background:{bg}; color:{fg};">{label}</span>'
+
+
+def category_badge_html(category: str) -> str:
     colors = {
         "Economic Event": ("#1f77b4", "white"),
         "Magnificent 7": ("#8e44ad", "white"),
@@ -47,46 +93,7 @@ def category_badge(category: str) -> str:
         "External News": ("#e74c3c", "white"),
     }
     bg, fg = colors.get(category, ("#6c757d", "white"))
-    return f"""
-        <div style="
-            display:inline-block;
-            padding:2px 8px;
-            border-radius:999px;
-            background:{bg};
-            color:{fg};
-            font-size:0.75rem;
-            font-weight:600;
-            margin-bottom:6px;
-        ">
-            {category}
-        </div>
-    """
-
-
-def impact_badge(score: int) -> str:
-    if score >= 4:
-        label, bg, fg = "Very High", "#dc3545", "white"
-    elif score == 3:
-        label, bg, fg = "High", "#fd7e14", "white"
-    elif score == 2:
-        label, bg, fg = "Medium", "#ffc107", "black"
-    else:
-        label, bg, fg = "Low", "#198754", "white"
-
-    return f"""
-        <div style="
-            display:inline-block;
-            padding:2px 8px;
-            border-radius:999px;
-            background:{bg};
-            color:{fg};
-            font-size:0.75rem;
-            font-weight:600;
-            margin-right:6px;
-        ">
-            {label} ({score}/4)
-        </div>
-    """
+    return f'<span class="badge" style="background:{bg}; color:{fg};">{category}</span>'
 
 
 def render_event_card(row: pd.Series, sector: str):
@@ -103,50 +110,27 @@ def render_event_card(row: pd.Series, sector: str):
     if pd.notna(source) and str(source).strip():
         meta_parts.append(f"Source: {source}")
 
-    meta_html = ""
-    if meta_parts:
-        meta_html = f"""
-        <div style="font-size:0.88rem; opacity:0.8; margin-bottom:6px;">
-            {" · ".join(meta_parts)}
-        </div>
-        """
+    meta_text = " · ".join(meta_parts)
 
-    description_html = ""
-    if pd.notna(description) and str(description).strip():
-        description_html = f"""
-        <div style="font-size:0.92rem; opacity:0.9;">
-            {description}
-        </div>
-        """
-
+    st.markdown('<div class="event-card">', unsafe_allow_html=True)
     st.markdown(
-        f"""
-        <div style="
-            border:1px solid rgba(255,255,255,0.08);
-            border-radius:12px;
-            padding:14px 16px;
-            margin-bottom:12px;
-            background:rgba(255,255,255,0.02);
-        ">
-            {impact_badge(impact)}
-            {category_badge(category)}
-            <div style="
-                font-size:1rem;
-                font-weight:700;
-                margin-top:8px;
-                margin-bottom:6px;
-            ">
-                {event_name}
-            </div>
-            {meta_html}
-            {description_html}
-            <div style="font-size:0.82rem; opacity:0.7; margin-top:8px;">
-                Impact for {sector}: {impact}/4
-            </div>
-        </div>
-        """,
+        impact_badge_html(impact) + category_badge_html(category),
         unsafe_allow_html=True
     )
+    st.write(f"**{event_name}**")
+
+    if meta_text:
+        st.markdown(f'<div class="muted-text">{meta_text}</div>', unsafe_allow_html=True)
+
+    if pd.notna(description) and str(description).strip():
+        st.write(str(description))
+
+    st.markdown(
+        f'<div class="small-muted">Impact for {sector}: {impact}/4</div>',
+        unsafe_allow_html=True
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 st.title("Calendar")
 st.caption("Weekly view of events filtered by sector, category, and minimum impact.")
@@ -244,7 +228,10 @@ if not filtered_df.empty:
         axis=1
     )
     filtered_df = filtered_df[filtered_df["impact_score"] >= min_impact].copy()
-    filtered_df = filtered_df.sort_values(["date", "impact_score", "event_name"], ascending=[True, False, True]).reset_index(drop=True)
+    filtered_df = filtered_df.sort_values(
+        ["date", "impact_score", "event_name"],
+        ascending=[True, False, True]
+    ).reset_index(drop=True)
 else:
     filtered_df["impact_score"] = pd.Series(dtype="int")
 
@@ -265,7 +252,10 @@ with col1:
 with col2:
     st.metric("Economic", int((filtered_df["category"] == "Economic Event").sum()) if not filtered_df.empty else 0)
 with col3:
-    st.metric("Earnings", int(filtered_df["category"].isin(["Magnificent 7", "Dow Jones 30", "Top 3 Sector"]).sum()) if not filtered_df.empty else 0)
+    st.metric(
+        "Earnings",
+        int(filtered_df["category"].isin(["Magnificent 7", "Dow Jones 30", "Top 3 Sector"]).sum()) if not filtered_df.empty else 0
+    )
 with col4:
     st.metric("Impact 4", int((filtered_df["impact_score"] == 4).sum()) if not filtered_df.empty else 0)
 
@@ -314,13 +304,7 @@ if week_df.empty:
         st.markdown(f"### {pd.to_datetime(current_day).strftime('%A, %d %B %Y')}")
         st.markdown(
             """
-            <div style="
-                border:1px dashed rgba(255,255,255,0.12);
-                border-radius:12px;
-                padding:14px 16px;
-                margin-bottom:12px;
-                opacity:0.75;
-            ">
+            <div class="event-card" style="border-style:dashed; opacity:0.75;">
                 No events.
             </div>
             """,
