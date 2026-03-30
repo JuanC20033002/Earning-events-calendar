@@ -7,7 +7,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-navigation = st.navigation(
+pg = st.navigation(
     [
         st.Page("pages/1_🚦_Traffic_Light.py", title="Traffic Light", icon="🚦", default=True),
         st.Page("pages/2_📈_Pandora_Universe.py", title="Pandora Universe", icon="📈"),
@@ -18,4 +18,4 @@ navigation = st.navigation(
     position="sidebar",
 )
 
-navigation.run()
+pg.run()
