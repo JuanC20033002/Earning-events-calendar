@@ -82,34 +82,33 @@ def get_day_color(max_impact: int):
     return "#4CAF50", "white", "🟢"
 
 
+def normalize_text(value):
+    if pd.isna(value):
+        return None
+    return str(value).strip()
+
+
 def normalize_category(value):
     if pd.isna(value):
         return None
 
     text = str(value).strip().lower()
 
-    if text in ["economic event", "evento económico", "evento economico", "evento econmico"]:
-        return "Economic Event"
-    if text in ["magnificent 7", "mag 7", "mag7"]:
-        return "Magnificent 7"
-    if text in ["dow jones 30", "dow jones"]:
-        return "Dow Jones 30"
-    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3 sector events"]:
-        return "Top 3 Sector"
-    if text in ["top 3 sector", "top 3 sector ", "top 3 sectors", "top 3 sector."]:
-        return "Top 3 Sector"
-    if text in ["top 3 sector", "top 3 sectors", "top 3 sector "]:
-        return "Top 3 Sector"
-    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector."]:
-        return "Top 3 Sector"
-    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3 sector event"]:
-        return "Top 3 Sector"
-    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3"]:
-        return "Top 3 Sector"
-    if text in ["external news", "noticia externa"]:
-        return "External News"
+    mapping = {
+        "economic event": "Economic Event",
+        "evento económico": "Economic Event",
+        "evento economico": "Economic Event",
+        "evento econmico": "Economic Event",
+        "magnificent 7": "Magnificent 7",
+        "dow jones 30": "Dow Jones 30",
+        "dow jones": "Dow Jones 30",
+        "top 3 sector": "Top 3 Sector",
+        "top 3 sectors": "Top 3 Sector",
+        "external news": "External News",
+        "noticia externa": "External News",
+    }
 
-    return str(value).strip()
+    return mapping.get(text, str(value).strip())
 
 
 def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
@@ -227,8 +226,9 @@ if master_df.empty:
     st.stop()
 
 master_df = master_df.copy()
-master_df["date"] = pd.to_datetime(master_df["date"], errors="coerce")
+master_df["event_name"] = master_df["event_name"].apply(normalize_text)
 master_df["category"] = master_df["category"].apply(normalize_category)
+master_df["date"] = pd.to_datetime(master_df["date"], errors="coerce")
 
 sectors = ["General"] + [s for s in get_available_sectors() if s != "General"]
 
@@ -375,3 +375,13 @@ with l4:
     st.markdown("🔴 Very High (4/4)")
 with l5:
     st.markdown("⬜ No events")
+
+# Temporary debug block
+with st.expander("Debug"):
+    st.write("Master rows:", len(master_df))
+    st.write("Display rows:", len(display_df))
+    if not master_df.empty:
+        st.write(master_df[["event_name", "category", "date"]].head(20))
+        st.write(master_df["category"].value_counts(dropna=False))
+    if not display_df.empty:
+        st.write(display_df[["event_name", "category", "date", "impact_score"]].head(20))
