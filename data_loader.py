@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 import pandas as pd
 import streamlit as st
 from supabase import create_client, Client
@@ -21,20 +20,20 @@ BASE_EVENT_COLUMNS = [
     "impact",
 ]
 
-NON_SECTOR_COLUMNS = {
-    "Fecha",
+POSSIBLE_DATE_COLS = ["Fecha", "fecha", "Date", "date"]
+POSSIBLE_EVENT_COLS = [
     "TipoEvento",
-    "Symbol",
+    "Tipo_Evento",
+    "tipoevento",
+    "tipo_evento",
+    "Evento",
+    "event",
+    "Event",
     "event_name",
-    "category",
-    "date",
-    "description",
-    "ticker",
-    "source_type",
-    "source",
-    "sectors",
-    "impact",
-}
+]
+POSSIBLE_SYMBOL_COLS = ["Symbol", "symbol", "Ticker", "ticker"]
+POSSIBLE_SOURCE_COLS = ["fuente", "source", "Fuente"]
+POSSIBLE_UPDATED_AT_COLS = ["updated_at", "updatedat", "UpdatedAt"]
 
 
 def get_supabase_client() -> Client:
@@ -69,49 +68,93 @@ def _parse_date_series(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, errors="coerce").dt.normalize()
 
 
+def _find_first_matching_column(columns, candidates):
+    return next((col for col in candidates if col in columns), None)
+
+
+def _normalize_category(value):
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip()
+
+    mapping = {
+        "Magnificent 7": "Magnificent 7",
+        "Dow Jones 30": "Dow Jones 30",
+        "Top 3 Sector": "Top 3 Sector",
+        "3 big companies for each sector": "Top 3 Sector",
+        "Dow Jones 30 that are not mentioned": "Dow Jones 30",
+        "Noticia Externa": "External News",
+        "External News": "External News",
+        "Evento Económico": "Economic Event",
+        "Economic Event": "Economic Event",
+    }
+
+    return mapping.get(text, text)
+
+
 @st.cache_data(ttl=300)
 def load_economic_events() -> pd.DataFrame:
     df = _safe_read_csv(ECONOMIC_EVENTS_FILE).copy()
-
     df.columns = [str(col).strip() for col in df.columns]
 
-    if "TipoEvento" not in df.columns:
-        raise ValueError("Eventos_economicos.csv must include 'TipoEvento' column.")
+    event_col = _find_first_matching_column(df.columns, POSSIBLE_EVENT_COLS)
+    date_col = _find_first_matching_column(df.columns, POSSIBLE_DATE_COLS)
 
-    sector_columns = [col for col in df.columns if col not in {"Fecha", "TipoEvento"}]
+    if event_col is None:
+        raise ValueError(
+            f"Eventos_economicos.csv is missing the event column. Detected columns: {list(df.columns)}"
+        )
 
-    df = df.rename(columns={"TipoEvento": "event_name"})
+    sector_columns = [col for col in df.columns if col not in {event_col, date_col}]
+
+    df = df.rename(columns={event_col: "event_name"})
+
+    if date_col is not None:
+        df = df.rename(columns={date_col: "date"})
+        df["date"] = _parse_date_series(df["date"])
+    else:
+        df["date"] = pd.NaT
+
+    df["event_name"] = df["event_name"].apply(_clean_text)
     df["category"] = "Economic Event"
     df["ticker"] = None
     df["description"] = None
     df["source_type"] = "economic"
     df["source"] = "csv"
-    df["date"] = pd.NaT
     df["sectors"] = None
+    df["impact"] = None
 
     ordered_cols = BASE_EVENT_COLUMNS + sector_columns
+    for col in ordered_cols:
+        if col not in df.columns:
+            df[col] = None
+
     return df[ordered_cols].copy()
 
 
 @st.cache_data(ttl=300)
 def load_economic_event_dates() -> pd.DataFrame:
     df = _safe_read_csv(ECONOMIC_DATES_FILE).copy()
-
     df.columns = [str(col).strip() for col in df.columns]
 
     rename_map = {
         "evento_nombre": "event_name",
         "eventonombre": "event_name",
+        "Evento": "event_name",
         "fecha": "date",
+        "Fecha": "date",
         "fuente": "source",
+        "Fuente": "source",
         "updated_at": "updated_at",
         "updatedat": "updated_at",
     }
     df = df.rename(columns=rename_map)
 
-    expected = {"event_name", "date"}
-    if not expected.issubset(df.columns):
-        raise ValueError("Fechas_eventos_economicos.csv must include event_name/evento_nombre and date/fecha.")
+    if "event_name" not in df.columns or "date" not in df.columns:
+        raise ValueError(
+            f"Fechas_eventos_economicos.csv must include event_name and date. Detected columns: {list(df.columns)}"
+        )
 
     df["event_name"] = df["event_name"].apply(_clean_text)
     df["date"] = _parse_date_series(df["date"])
@@ -131,23 +174,28 @@ def load_economic_event_dates() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_earnings_events() -> pd.DataFrame:
     df = _safe_read_csv(EARNINGS_EVENTS_FILE).copy()
-
     df.columns = [str(col).strip() for col in df.columns]
 
-    required_cols = {"Fecha", "Symbol", "TipoEvento"}
-    if not required_cols.issubset(df.columns):
-        raise ValueError("Earnings_Events.csv must include 'Fecha', 'Symbol', and 'TipoEvento' columns.")
+    date_col = _find_first_matching_column(df.columns, POSSIBLE_DATE_COLS)
+    symbol_col = _find_first_matching_column(df.columns, POSSIBLE_SYMBOL_COLS)
+    category_col = _find_first_matching_column(df.columns, POSSIBLE_EVENT_COLS)
 
-    sector_columns = [col for col in df.columns if col not in {"Fecha", "Symbol", "TipoEvento"}]
+    if date_col is None or symbol_col is None or category_col is None:
+        raise ValueError(
+            f"Earnings_Events.csv is missing required columns. Detected columns: {list(df.columns)}"
+        )
+
+    sector_columns = [col for col in df.columns if col not in {date_col, symbol_col, category_col}]
 
     df = df.rename(columns={
-        "Fecha": "date",
-        "Symbol": "ticker",
-        "TipoEvento": "category",
+        date_col: "date",
+        symbol_col: "ticker",
+        category_col: "category",
     })
 
     df["date"] = _parse_date_series(df["date"])
     df["ticker"] = df["ticker"].astype(str).str.strip().str.upper()
+    df["category"] = df["category"].apply(_normalize_category)
     df["event_name"] = df["ticker"] + " Earnings"
     df["description"] = None
     df["source_type"] = "earnings"
@@ -156,6 +204,10 @@ def load_earnings_events() -> pd.DataFrame:
     df["impact"] = None
 
     ordered_cols = BASE_EVENT_COLUMNS + sector_columns
+    for col in ordered_cols:
+        if col not in df.columns:
+            df[col] = None
+
     return df[ordered_cols].copy()
 
 
@@ -177,6 +229,8 @@ def load_external_news() -> pd.DataFrame:
         "impacto": "impact",
     })
 
+    df["event_name"] = df["event_name"].apply(_clean_text)
+    df["description"] = df["description"].apply(_clean_text)
     df["date"] = _parse_date_series(df["date"])
     df["category"] = "External News"
     df["ticker"] = None
@@ -191,33 +245,53 @@ def load_external_news() -> pd.DataFrame:
 
 
 def get_available_sectors() -> list:
-    econ_df = load_economic_events()
+    economic_df = load_economic_events()
     earnings_df = load_earnings_events()
 
-    econ_sectors = [col for col in econ_df.columns if col not in BASE_EVENT_COLUMNS]
+    economic_sectors = [col for col in economic_df.columns if col not in BASE_EVENT_COLUMNS]
     earnings_sectors = [col for col in earnings_df.columns if col not in BASE_EVENT_COLUMNS]
 
-    sectors = sorted(set(econ_sectors + earnings_sectors))
+    sectors = sorted(set(economic_sectors + earnings_sectors))
     return sectors
 
 
 def get_row_impact(row: pd.Series, selected_sector: str) -> int:
     if row["source_type"] == "external_news":
-        sectors = row.get("sectors") or []
+        sectors = row.get("sectors")
         impact = row.get("impact")
 
+        if pd.isna(impact):
+            return 0
+
+        try:
+            impact = int(impact)
+        except Exception:
+            return 0
+
         if selected_sector == "General":
-            return int(impact) if pd.notna(impact) else 0
+            return impact
 
         if isinstance(sectors, list) and selected_sector in sectors:
-            return int(impact) if pd.notna(impact) else 0
+            return impact
+
+        if isinstance(sectors, str):
+            parsed = [item.strip() for item in sectors.split(",") if item.strip()]
+            if selected_sector in parsed:
+                return impact
 
         return 0
 
     if selected_sector == "General":
-        return int(row.get("General", 0) or 0)
+        value = row.get("General", 0)
+    else:
+        value = row.get(selected_sector, 0)
 
-    return int(row.get(selected_sector, 0) or 0)
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except Exception:
+        return 0
 
 
 @st.cache_data(ttl=300)
@@ -227,14 +301,12 @@ def build_master_events_df() -> pd.DataFrame:
     earnings_df = load_earnings_events()
     external_news_df = load_external_news()
 
+    economic_df = economic_df.drop(columns=["date"], errors="ignore")
     economic_df = economic_df.merge(
         economic_dates_df[["event_name", "date"]],
         on="event_name",
-        how="left",
-        suffixes=("", "_manual")
+        how="left"
     )
-    economic_df["date"] = economic_df["date_manual"]
-    economic_df = economic_df.drop(columns=["date_manual"])
 
     all_columns = sorted(set(economic_df.columns) | set(earnings_df.columns) | set(external_news_df.columns))
 
@@ -249,6 +321,10 @@ def build_master_events_df() -> pd.DataFrame:
 
     master_df["event_name"] = master_df["event_name"].apply(_clean_text)
     master_df["description"] = master_df["description"].apply(_clean_text)
+    master_df["category"] = master_df["category"].apply(_normalize_category)
     master_df["date"] = _parse_date_series(master_df["date"])
 
-    return master_df.sort_values(["date", "category", "event_name"], na_position="last").reset_index(drop=True)
+    return master_df.sort_values(
+        ["date", "category", "event_name"],
+        na_position="last"
+    ).reset_index(drop=True)
