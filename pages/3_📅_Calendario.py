@@ -12,29 +12,44 @@ st.set_page_config(page_title="Calendar", page_icon="🗓️", layout="wide")
 st.markdown(
     """
     <style>
-    .badge {
-        display:inline-block;
-        padding:4px 10px;
-        border-radius:999px;
-        font-size:0.75rem;
-        font-weight:700;
-        margin-right:6px;
-        margin-bottom:6px;
+    .main {
+        padding: 0rem 1rem;
     }
-    .event-card {
-        border:1px solid rgba(255,255,255,0.08);
-        border-radius:12px;
-        padding:14px 16px;
-        margin-bottom:12px;
-        background:rgba(255,255,255,0.02);
+    div[data-testid="stMetricValue"] {
+        font-size: 1.2rem;
     }
-    .muted-text {
-        font-size:0.9rem;
-        opacity:0.8;
+    .event-divider {
+        margin-top: 0.6rem;
+        margin-bottom: 0.8rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
     }
-    .small-muted {
-        font-size:0.82rem;
-        opacity:0.72;
+    .mini-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-bottom: 0.25rem;
+        text-align: center;
+        min-width: 76px;
+    }
+    .impact-4 { background: #ff4b4b; color: white; }
+    .impact-3 { background: #ff8c00; color: white; }
+    .impact-2 { background: #ffd700; color: #222; }
+    .impact-1 { background: #4caf50; color: white; }
+
+    .cat-mag7 { color: #c084fc; font-size: 0.78rem; }
+    .cat-dow { color: #5eead4; font-size: 0.78rem; }
+    .cat-top3 { color: #fbbf24; font-size: 0.78rem; }
+    .cat-ext { color: #f87171; font-size: 0.78rem; }
+    .cat-eco { color: #93c5fd; font-size: 0.78rem; }
+
+    .empty-day-box {
+        border: 1px dashed rgba(255,255,255,0.12);
+        border-radius: 10px;
+        padding: 0.9rem 1rem;
+        opacity: 0.8;
+        margin-bottom: 1rem;
     }
     </style>
     """,
@@ -71,69 +86,91 @@ def get_weeks_of_month(year: int, month: int):
     return unique_weeks
 
 
-def impact_badge_html(score: int) -> str:
+def get_impact_badge(score: int):
     if score >= 4:
-        label, bg, fg = "Very High (4/4)", "#dc3545", "white"
-    elif score == 3:
-        label, bg, fg = "High (3/4)", "#fd7e14", "white"
-    elif score == 2:
-        label, bg, fg = "Medium (2/4)", "#ffc107", "black"
-    else:
-        label, bg, fg = "Low (1/4)", "#198754", "white"
-
-    return f'<span class="badge" style="background:{bg}; color:{fg};">{label}</span>'
+        return "Very High", "impact-4", "🔴"
+    if score == 3:
+        return "High", "impact-3", "🟠"
+    if score == 2:
+        return "Medium", "impact-2", "🟡"
+    return "Low", "impact-1", "🟢"
 
 
-def category_badge_html(category: str) -> str:
-    colors = {
-        "Economic Event": ("#1f77b4", "white"),
-        "Magnificent 7": ("#8e44ad", "white"),
-        "Dow Jones 30": ("#16a085", "white"),
-        "Top 3 Sector": ("#f39c12", "black"),
-        "External News": ("#e74c3c", "white"),
-    }
-    bg, fg = colors.get(category, ("#6c757d", "white"))
-    return f'<span class="badge" style="background:{bg}; color:{fg};">{category}</span>'
+def get_category_icon(category: str):
+    if category == "Magnificent 7":
+        return "💻", "cat-mag7"
+    if category == "Dow Jones 30":
+        return "🏛️", "cat-dow"
+    if category == "Top 3 Sector":
+        return "🏭", "cat-top3"
+    if category == "External News":
+        return "📰", "cat-ext"
+    return "📊", "cat-eco"
 
 
-def render_event_card(row: pd.Series, sector: str):
-    event_name = row.get("event_name", "Unnamed event")
+def render_event_row(row: pd.Series, selected_sector: str):
+    impact = int(row.get("impact_score", 0))
+    impact_label, impact_class, impact_emoji = get_impact_badge(impact)
     category = row.get("category", "Unknown")
+    cat_icon, cat_class = get_category_icon(category)
+
+    event_name = row.get("event_name", "Unnamed event")
     ticker = row.get("ticker")
     description = row.get("description")
     source = row.get("source")
-    impact = int(row.get("impact_score", 0))
 
-    meta_parts = []
+    info_parts = []
     if pd.notna(ticker) and str(ticker).strip():
-        meta_parts.append(f"Ticker: {ticker}")
+        info_parts.append(f"Ticker: {ticker}")
     if pd.notna(source) and str(source).strip():
-        meta_parts.append(f"Source: {source}")
-
-    meta_text = " · ".join(meta_parts)
-
-    st.markdown('<div class="event-card">', unsafe_allow_html=True)
-    st.markdown(
-        impact_badge_html(impact) + category_badge_html(category),
-        unsafe_allow_html=True
-    )
-    st.write(f"**{event_name}**")
-
-    if meta_text:
-        st.markdown(f'<div class="muted-text">{meta_text}</div>', unsafe_allow_html=True)
+        info_parts.append(f"Source: {source}")
 
     if pd.notna(description) and str(description).strip():
-        st.write(str(description))
+        short_desc = str(description)
+        if len(short_desc) > 100:
+            short_desc = short_desc[:100] + "..."
+        info_parts.append(short_desc)
 
-    st.markdown(
-        f'<div class="small-muted">Impact for {sector}: {impact}/4</div>',
-        unsafe_allow_html=True
-    )
-    st.markdown("</div>", unsafe_allow_html=True)
+    with st.container():
+        col1, col2 = st.columns([1, 4])
+
+        with col1:
+            st.markdown(
+                f"""
+                <div class="mini-badge {impact_class}">
+                    {impact_label}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            st.markdown(
+                f"""
+                <div class="{cat_class}">
+                    {cat_icon} {category}
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col2:
+            st.markdown(f"**{event_name}**")
+
+            if info_parts:
+                st.markdown(
+                    f"<small>{' · '.join(info_parts)}</small>",
+                    unsafe_allow_html=True
+                )
+
+            st.markdown(
+                f"<small>Impact in {selected_sector}: {impact}/4</small>",
+                unsafe_allow_html=True
+            )
+
+        st.markdown('<div class="event-divider"></div>', unsafe_allow_html=True)
 
 
 st.title("Calendar")
-st.caption("Weekly view of events filtered by sector, category, and minimum impact.")
+st.caption("Weekly event list by month, sector, category, and impact.")
 
 master_df = build_master_events_df()
 
@@ -144,7 +181,8 @@ if master_df.empty:
 sectors = ["General"] + get_available_sectors()
 
 with st.sidebar:
-    st.header("Filters")
+    st.markdown("## Filters")
+    st.markdown("---")
 
     selected_sector = st.selectbox(
         "Sector",
@@ -158,20 +196,27 @@ with st.sidebar:
     current_year = datetime.now().year
     current_month = datetime.now().month
 
-    col1, col2 = st.columns(2)
-    with col1:
+    col_month, col_year = st.columns(2)
+
+    with col_month:
         selected_month = st.selectbox(
             "Month",
             list(range(1, 13)),
             index=current_month - 1,
             format_func=lambda x: calendar.month_name[x]
         )
-    with col2:
+
+    with col_year:
         selected_year = st.selectbox(
             "Year",
             list(range(current_year, current_year + 3)),
             index=0
         )
+
+    month_start = datetime(selected_year, selected_month, 1).date()
+    month_end = datetime(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1]).date()
+
+    st.info(f"{month_start.strftime('%d/%m/%Y')} - {month_end.strftime('%d/%m/%Y')}")
 
     st.markdown("---")
     st.subheader("Event types")
@@ -207,9 +252,6 @@ if show_top3:
 if show_external:
     allowed_categories.append("External News")
 
-month_start = datetime(selected_year, selected_month, 1).date()
-month_end = datetime(selected_year, selected_month, calendar.monthrange(selected_year, selected_month)[1]).date()
-
 filtered_df = master_df.copy()
 filtered_df = filtered_df[filtered_df["date"].notna()].copy()
 filtered_df = filtered_df[
@@ -220,6 +262,7 @@ filtered_df = filtered_df[
 if allowed_categories:
     filtered_df = filtered_df[filtered_df["category"].isin(allowed_categories)].copy()
 else:
+    st.warning("Select at least one event category to display.")
     filtered_df = pd.DataFrame(columns=filtered_df.columns)
 
 if not filtered_df.empty:
@@ -228,10 +271,7 @@ if not filtered_df.empty:
         axis=1
     )
     filtered_df = filtered_df[filtered_df["impact_score"] >= min_impact].copy()
-    filtered_df = filtered_df.sort_values(
-        ["date", "impact_score", "event_name"],
-        ascending=[True, False, True]
-    ).reset_index(drop=True)
+    filtered_df = filtered_df.sort_values(["date", "impact_score"], ascending=[True, False]).reset_index(drop=True)
 else:
     filtered_df["impact_score"] = pd.Series(dtype="int")
 
@@ -248,40 +288,44 @@ if st.session_state.calendar_week_index < 0:
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric("Total events", len(filtered_df))
+    st.metric("Total Events", len(filtered_df))
 with col2:
-    st.metric("Economic", int((filtered_df["category"] == "Economic Event").sum()) if not filtered_df.empty else 0)
+    eco_count = int((filtered_df["category"] == "Economic Event").sum()) if not filtered_df.empty else 0
+    st.metric("Economic", eco_count)
 with col3:
-    st.metric(
-        "Earnings",
-        int(filtered_df["category"].isin(["Magnificent 7", "Dow Jones 30", "Top 3 Sector"]).sum()) if not filtered_df.empty else 0
-    )
+    mag_count = int((filtered_df["category"] == "Magnificent 7").sum()) if not filtered_df.empty else 0
+    st.metric("Magnificent 7", mag_count)
 with col4:
-    st.metric("Impact 4", int((filtered_df["impact_score"] == 4).sum()) if not filtered_df.empty else 0)
+    impact4_count = int((filtered_df["impact_score"] == 4).sum()) if not filtered_df.empty else 0
+    st.metric("Impact 4", impact4_count)
 
 st.markdown("---")
 
-nav1, nav2, nav3 = st.columns([1, 2, 1])
+colnav1, colnav2, colnav3 = st.columns([1, 2, 1])
 
-with nav1:
-    if st.button("Previous week", disabled=st.session_state.calendar_week_index == 0, use_container_width=True):
+with colnav1:
+    if st.button("Previous Week", disabled=st.session_state.calendar_week_index == 0, use_container_width=True):
         st.session_state.calendar_week_index -= 1
         st.rerun()
 
-with nav2:
+with colnav2:
     week_start, week_end = weeks[st.session_state.calendar_week_index]
     st.markdown(
         f"""
         <div style="text-align:center;">
-            <div style="font-size:1.1rem; font-weight:700;">Week {st.session_state.calendar_week_index + 1} of {len(weeks)}</div>
-            <div style="opacity:0.8;">{week_start.strftime('%d %b %Y')} - {week_end.strftime('%d %b %Y')}</div>
+            <div style="font-size:1rem; font-weight:700;">
+                Week {st.session_state.calendar_week_index + 1} of {len(weeks)}
+            </div>
+            <div style="opacity:0.8;">
+                {week_start.strftime('%d/%m/%Y')} - {week_end.strftime('%d/%m/%Y')}
+            </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-with nav3:
-    if st.button("Next week", disabled=st.session_state.calendar_week_index >= len(weeks) - 1, use_container_width=True):
+with colnav3:
+    if st.button("Next Week", disabled=st.session_state.calendar_week_index >= len(weeks) - 1, use_container_width=True):
         st.session_state.calendar_week_index += 1
         st.rerun()
 
@@ -294,32 +338,29 @@ week_df = filtered_df[
     (filtered_df["date"].dt.date <= week_end)
 ].copy()
 
-if week_df.empty:
-    st.info(
-        f"No events match the selected filters for the week {week_start.strftime('%d %b %Y')} - {week_end.strftime('%d %b %Y')}."
-    )
+all_days_in_week = [week_start + timedelta(days=i) for i in range((week_end - week_start).days + 1)]
 
-    for offset in range((week_end - week_start).days + 1):
-        current_day = week_start + timedelta(days=offset)
-        st.markdown(f"### {pd.to_datetime(current_day).strftime('%A, %d %B %Y')}")
+if week_df.empty:
+    st.info("No events match the selected filters for this week.")
+
+for current_day in all_days_in_week:
+    day_df = week_df[week_df["date"].dt.date == current_day].copy()
+    day_df = day_df.sort_values(["impact_score", "event_name"], ascending=[False, True])
+
+    day_title = pd.to_datetime(current_day).strftime("%A, %d %B %Y")
+    st.markdown(f"### {day_title}")
+
+    if day_df.empty:
         st.markdown(
             """
-            <div class="event-card" style="border-style:dashed; opacity:0.75;">
-                No events.
+            <div class="empty-day-box">
+                No events for this day.
             </div>
             """,
             unsafe_allow_html=True
         )
-else:
-    unique_dates = sorted(week_df["date"].dt.date.unique())
-
-    for current_day in unique_dates:
-        day_df = week_df[week_df["date"].dt.date == current_day].copy()
-        day_df = day_df.sort_values(["impact_score", "event_name"], ascending=[False, True])
-
-        st.markdown(f"### {pd.to_datetime(current_day).strftime('%A, %d %B %Y')}")
-
+    else:
         for _, row in day_df.iterrows():
-            render_event_card(row, selected_sector)
+            render_event_row(row, selected_sector)
 
-        st.markdown("---")
+    st.markdown("---")
