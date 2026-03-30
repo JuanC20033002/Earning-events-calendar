@@ -73,6 +73,7 @@ def get_available_sectors():
 def load_impact_data():
     frames = []
 
+    # Economic events matrix
     try:
         econ_df = pd.read_csv(ECONOMIC_EVENTS_FILE)
         econ_df = _standardize_columns(econ_df)
@@ -95,6 +96,7 @@ def load_impact_data():
     except Exception:
         pass
 
+    # Earnings matrix
     try:
         if EARNINGS_FILE.lower().endswith(".csv"):
             earn_df = pd.read_csv(EARNINGS_FILE)
@@ -121,6 +123,7 @@ def load_impact_data():
     except Exception:
         pass
 
+    # Supabase overrides / additions
     client = _get_supabase_client()
     if client is not None:
         try:
