@@ -7,7 +7,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
-
 pages = {
     "traffic_light": st.Page(
         "pages/1_🚦_Traffic_Light.py",
