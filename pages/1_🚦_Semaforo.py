@@ -118,30 +118,22 @@ def normalize_category(value):
 
 
 def get_event_impact(event_name: str, selected_sector: str, impact_df: pd.DataFrame) -> int:
-    if impact_df.empty or not event_name:
+    if impact_df.empty or not event_name or not selected_sector:
         return 0
 
     event_key = normalize_key(event_name)
     sector_key = normalize_key(selected_sector)
 
-    matches = impact_df[impact_df["event_key"] == event_key].copy()
+    matches = impact_df[
+        (impact_df["event_key"] == event_key) &
+        (impact_df["sector_key"] == sector_key)
+    ].copy()
 
     if matches.empty:
         return 0
 
-    if sector_key == "general":
-        try:
-            return int(matches["impact_score"].max())
-        except Exception:
-            return 0
-
-    sector_matches = matches[matches["sector_key"] == sector_key]
-
-    if sector_matches.empty:
-        return 0
-
     try:
-        return int(sector_matches["impact_score"].max())
+        return int(matches["impact_score"].max())
     except Exception:
         return 0
 
