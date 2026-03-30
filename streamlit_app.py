@@ -1,4 +1,5 @@
 import streamlit as st
+from menu import render_menu
 
 st.set_page_config(
     page_title="Economic Events Calendar",
@@ -49,14 +50,5 @@ pg = st.navigation(
     position="hidden",
 )
 
-with st.sidebar:
-    st.markdown("## Economic Events Calendar")
-    st.caption("Navigation")
-
-    st.page_link(traffic_light, label="Traffic Light", icon="🚦")
-    st.page_link(pandora_universe, label="Pandora Universe", icon="📈")
-    st.page_link(calendar_page, label="Calendar", icon="🗓️")
-    st.page_link(external_news, label="External News", icon="🌐")
-    st.page_link(assign_dates, label="Assign Dates", icon="📝")
-
+render_menu()
 pg.run()

@@ -1,3 +1,5 @@
+from menu import render_menu
+render_menu()
 import calendar
 from datetime import datetime, timedelta
 import pandas as pd
