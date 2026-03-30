@@ -256,7 +256,7 @@ if show_economic:
 if show_mag7:
     allowed_categories.append("Magnificent 7")
 if show_dow:
-    allowed_categories.append("Dow Jones 30")
+    allowed_categories.extend(["Dow Jones 30", "Dow Jones 30 that are not mentioned"])
 if show_top3:
     allowed_categories.extend(["Top 3 Sector", "3 big companies for each sector"])
 if show_external:
