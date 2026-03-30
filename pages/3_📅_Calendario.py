@@ -97,13 +97,27 @@ def render_event_card(row: pd.Series, sector: str):
     source = row.get("source")
     impact = int(row.get("impact_score", 0))
 
-    meta = []
+    meta_parts = []
     if pd.notna(ticker) and str(ticker).strip():
-        meta.append(f"Ticker: {ticker}")
+        meta_parts.append(f"Ticker: {ticker}")
     if pd.notna(source) and str(source).strip():
-        meta.append(f"Source: {source}")
+        meta_parts.append(f"Source: {source}")
 
-    meta_text = " · ".join(meta)
+    meta_html = ""
+    if meta_parts:
+        meta_html = f"""
+        <div style="font-size:0.88rem; opacity:0.8; margin-bottom:6px;">
+            {" · ".join(meta_parts)}
+        </div>
+        """
+
+    description_html = ""
+    if pd.notna(description) and str(description).strip():
+        description_html = f"""
+        <div style="font-size:0.92rem; opacity:0.9;">
+            {description}
+        </div>
+        """
 
     st.markdown(
         f"""
@@ -124,16 +138,15 @@ def render_event_card(row: pd.Series, sector: str):
             ">
                 {event_name}
             </div>
-            {"<div style='font-size:0.88rem; opacity:0.8; margin-bottom:6px;'>" + meta_text + "</div>" if meta_text else ""}
-            {"<div style='font-size:0.92rem; opacity:0.9;'>" + str(description) + "</div>" if pd.notna(description) and str(description).strip() else ""}
-            <div style='font-size:0.82rem; opacity:0.7; margin-top:8px;'>
+            {meta_html}
+            {description_html}
+            <div style="font-size:0.82rem; opacity:0.7; margin-top:8px;">
                 Impact for {sector}: {impact}/4
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
-
 
 st.title("Calendar")
 st.caption("Weekly view of events filtered by sector, category, and minimum impact.")
