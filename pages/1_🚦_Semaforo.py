@@ -1,54 +1,24 @@
-import streamlit as st
-from supabase import create_client, Client
-import pandas as pd
-from datetime import datetime
 import calendar
-import os
+from datetime import datetime
+import pandas as pd
+import streamlit as st
+
+from data_loader import build_master_events_df, get_available_sectors, get_row_impact
 
 
-# ==========================================
-# CONFIG
-# ==========================================
-try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except Exception:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+st.set_page_config(page_title="Traffic Light", page_icon="🚦", layout="wide")
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
-
-# ==========================================
-# ESTILOS
-# ==========================================
-st.markdown("""
+st.markdown(
+    """
     <style>
     .main {
         padding: 0rem 1rem;
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #FF4B4B;
-        color: white;
-        border-radius: 5px;
-        padding: 0.5rem;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        background-color: #FF6B6B;
-        border-color: #FF4B4B;
-    }
-    h1 {
-        color: #FF4B4B;
-    }
-
-    .calendario-dia {
+    .calendar-day {
         position: relative;
         cursor: pointer;
     }
-
-    .calendario-dia .tooltip-content {
+    .calendar-day .tooltip-content {
         visibility: hidden;
         width: 260px;
         background-color: #333;
@@ -64,11 +34,10 @@ st.markdown("""
         opacity: 0;
         transition: opacity 0.3s;
         font-size: 0.85em;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     }
-
-    .calendario-dia .tooltip-content::after {
-        content: "";
+    .calendar-day .tooltip-content:after {
+        content: '';
         position: absolute;
         top: 100%;
         left: 50%;
@@ -77,414 +46,294 @@ st.markdown("""
         border-style: solid;
         border-color: #333 transparent transparent transparent;
     }
-
-    .calendario-dia:hover .tooltip-content {
+    .calendar-day:hover .tooltip-content {
         visibility: visible;
         opacity: 1;
     }
-
-    .tooltip-evento {
+    .tooltip-event {
         padding: 3px 0;
         border-bottom: 1px solid #555;
     }
-
-    .tooltip-evento:last-child {
+    .tooltip-event:last-child {
         border-bottom: none;
     }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
+)
 
 
-# ==========================================
-# FUNCIONES DE CARGA
-# ==========================================
-@st.cache_data(ttl=300)
-def cargar_earnings_desde_csv(csv_path="Earnings_Events.csv"):
-    try:
-        df_raw = pd.read_csv(csv_path)
-
-        if df_raw.empty:
-            return pd.DataFrame(), pd.DataFrame()
-
-        df_raw.columns = [c.strip() for c in df_raw.columns]
-
-        categorias_map = {
-            "Magnificent 7": "Magnificent 7",
-            "Dow Jones 30 that are not mentioned": "Dow Jones 30",
-            "3 big companies for each sector": "Top 3 Sector"
-        }
-
-        columnas_base = {"Fecha", "Symbol", "Tipo_Evento"}
-        columnas_sector = [c for c in df_raw.columns if c not in columnas_base]
-
-        eventos = []
-        impactos = []
-
-        for _, row in df_raw.iterrows():
-            symbol = str(row.get("Symbol", "")).strip()
-            tipo_evento = str(row.get("Tipo_Evento", "")).strip()
-            categoria = categorias_map.get(tipo_evento, tipo_evento)
-
-            fecha_raw = row.get("Fecha")
-            fecha = pd.to_datetime(fecha_raw, errors="coerce")
-
-            if not symbol:
-                continue
-
-            evento_nombre = f"{symbol} Earnings"
-
-            eventos.append({
-                "id": f"csv_{symbol}_{categoria}",
-                "evento_nombre": evento_nombre,
-                "categoria": categoria,
-                "tipo": "earning",
-                "fecha": fecha,
-                "descripcion": f"{categoria} earnings event",
-                "ticker": symbol,
-                "pais": "USA",
-                "source": "csv"
-            })
-
-            for sector in columnas_sector:
-                valor = row.get(sector)
-
-                if pd.notna(valor) and str(valor).strip() != "":
-                    try:
-                        impacto_score = int(float(valor))
-                    except Exception:
-                        continue
-
-                    if impacto_score > 0:
-                        impactos.append({
-                            "evento_tipo": evento_nombre,
-                            "sector": sector.strip(),
-                            "impacto_score": impacto_score,
-                            "source": "csv"
-                        })
-
-        df_eventos_csv = pd.DataFrame(eventos)
-        df_impactos_csv = pd.DataFrame(impactos)
-
-        if not df_eventos_csv.empty:
-            df_eventos_csv["fecha"] = pd.to_datetime(df_eventos_csv["fecha"], errors="coerce")
-
-        return df_eventos_csv, df_impactos_csv
-
-    except Exception as e:
-        st.error(f"Error al cargar earnings desde CSV: {str(e)}")
-        return pd.DataFrame(), pd.DataFrame()
+def get_month_options(start_year: int, end_year: int, start_month: int):
+    options = []
+    for year in range(start_year, end_year + 1):
+        month_start = start_month if year == start_year else 1
+        month_end = 12
+        for month in range(month_start, month_end + 1):
+            options.append((year, month))
+    return options
 
 
-@st.cache_data(ttl=300)
-def obtener_sectores_disponibles():
-    try:
-        sectores = set()
-
-        impactos_response = supabase.table("impacto_sectores").select("sector").execute()
-        if impactos_response.data:
-            sectores.update(
-                item["sector"].strip()
-                for item in impactos_response.data
-                if item.get("sector")
-            )
-
-        _, df_impactos_csv = cargar_earnings_desde_csv("Earnings_Events.csv")
-        if not df_impactos_csv.empty:
-            sectores.update(df_impactos_csv["sector"].dropna().astype(str).str.strip().tolist())
-
-        sectores = sorted(list(sectores))
-        return sectores if sectores else ["General"]
-
-    except Exception as e:
-        st.error(f"Error al obtener sectores: {str(e)}")
-        return ["General"]
+def get_day_color(max_impact: int):
+    if max_impact >= 4:
+        return "#FF4444", "white", "🔴"
+    if max_impact == 3:
+        return "#FF8C00", "white", "🟠"
+    if max_impact == 2:
+        return "#FFD700", "#333", "🟡"
+    return "#4CAF50", "white", "🟢"
 
 
-@st.cache_data(ttl=300)
-def obtener_eventos_con_impacto():
-    try:
-        impactos_response = supabase.table("impacto_sectores").select("*").execute()
-        eventos_response = (
-            supabase.table("eventos_unicos")
-            .select("*")
-            .in_("categoria", ["Evento Económico", "Noticia Externa"])
-            .execute()
-        )
+def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
+    cal = calendar.monthcalendar(year, month)
+    week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
-        df_eventos_sb = pd.DataFrame(eventos_response.data or [])
-        df_impactos_sb = pd.DataFrame(impactos_response.data or [])
+    header_cols = st.columns(7)
+    for i, day_name in enumerate(week_days):
+        with header_cols[i]:
+            st.markdown(f"**{day_name}**")
 
-        if not df_eventos_sb.empty:
-            df_eventos_sb["fecha"] = pd.to_datetime(df_eventos_sb["fecha"], errors="coerce")
-            df_eventos_sb["source"] = "supabase"
-
-        df_eventos_csv, df_impactos_csv = cargar_earnings_desde_csv("Earnings_Events.csv")
-
-        df_eventos = pd.concat([df_eventos_sb, df_eventos_csv], ignore_index=True, sort=False)
-        df_impactos = pd.concat([df_impactos_sb, df_impactos_csv], ignore_index=True, sort=False)
-
-        if not df_eventos.empty and "fecha" in df_eventos.columns:
-            df_eventos["fecha"] = pd.to_datetime(df_eventos["fecha"], errors="coerce")
-
-        return df_eventos, df_impactos
-
-    except Exception as e:
-        st.error(f"Error al obtener eventos: {str(e)}")
-        return pd.DataFrame(), pd.DataFrame()
-
-
-def obtener_impacto_evento(evento_nombre, sector, df_impactos):
-    try:
-        resultado = df_impactos[
-            (df_impactos["evento_tipo"] == evento_nombre) &
-            (df_impactos["sector"] == sector)
-        ]
-        if not resultado.empty:
-            return resultado.iloc[0]["impacto_score"]
-        return 0
-    except Exception:
-        return 0
-
-
-def generar_calendario_semaforo(anio, mes, df_eventos_mes):
-    cal = calendar.monthcalendar(anio, mes)
-    dias_semana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-
-    cols_header = st.columns(7)
-    for i, dia in enumerate(dias_semana):
-        with cols_header[i]:
-            st.markdown(f"**{dia}**")
-
-    for semana in cal:
-        cols_semana = st.columns(7)
-        for i, dia in enumerate(semana):
-            with cols_semana[i]:
-                if dia == 0:
+    for week in cal:
+        cols = st.columns(7)
+        for i, day in enumerate(week):
+            with cols[i]:
+                if day == 0:
                     st.markdown(
                         """
-                        <div style='background-color: transparent; padding: 15px; border-radius: 8px; text-align: center; height: 100px; display: flex; flex-direction: column; justify-content: center; align-items: center;'>
+                        <div style="
+                            background-color: transparent;
+                            padding: 15px;
+                            border-radius: 8px;
+                            text-align: center;
+                            height: 100px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                        "></div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                    continue
+
+                current_date = datetime(year, month, day).date()
+                day_events = month_df[month_df["date"].dt.date == current_date].copy()
+
+                if day_events.empty:
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background-color: #f5f5f5;
+                            padding: 15px;
+                            border-radius: 8px;
+                            text-align: center;
+                            height: 100px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                        ">
+                            <div style="font-size: 1.2em; font-weight: bold; color: #666;">{day}</div>
+                            <div style="font-size: 0.8em; color: #999; margin-top: 5px;">No events</div>
                         </div>
                         """,
                         unsafe_allow_html=True
                     )
                 else:
-                    fecha_dia = datetime(anio, mes, dia).date()
-                    eventos_dia = df_eventos_mes[df_eventos_mes["fecha"].dt.date == fecha_dia]
+                    max_impact = int(day_events["impact_score"].max())
+                    event_count = len(day_events)
+                    bg_color, text_color, emoji = get_day_color(max_impact)
 
-                    if eventos_dia.empty:
-                        st.markdown(
-                            f"""
-                            <div style='background-color: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; height: 100px; display: flex; flex-direction: column; justify-content: center; align-items: center;'>
-                                <div style='font-size: 1.2em; font-weight: bold; color: #666;'>{dia}</div>
-                                <div style='font-size: 0.8em; color: #999; margin-top: 5px;'>Sin eventos</div>
+                    tooltip_html = f"<div class='tooltip-content'><strong>{day} {calendar.month_name[month]}</strong><br><br>"
+                    day_events = day_events.sort_values("impact_score", ascending=False)
+
+                    for _, event in day_events.iterrows():
+                        impact = int(event["impact_score"])
+                        impact_icon = "🔴" if impact >= 4 else "🟠" if impact == 3 else "🟡" if impact == 2 else "🟢"
+                        event_name = str(event["event_name"])
+                        if len(event_name) > 40:
+                            event_name = event_name[:37] + "..."
+                        tooltip_html += f"<div class='tooltip-event'>{impact_icon} {event_name}</div>"
+
+                    tooltip_html += "</div>"
+
+                    st.markdown(
+                        f"""
+                        <div class="calendar-day" style="
+                            background-color: {bg_color};
+                            padding: 15px;
+                            border-radius: 8px;
+                            text-align: center;
+                            height: 100px;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            align-items: center;
+                            position: relative;
+                        ">
+                            <div style="font-size: 1.3em; font-weight: bold; color: {text_color};">{day}</div>
+                            <div style="font-size: 0.85em; color: {text_color}; margin-top: 5px;">
+                                {emoji} {event_count} event{"s" if event_count != 1 else ""}
                             </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                    else:
-                        impacto_max = int(eventos_dia["impacto"].max())
-                        num_eventos = len(eventos_dia)
-
-                        if impacto_max == 4:
-                            bg_color = "#FF4444"
-                            text_color = "white"
-                            emoji = "🔴"
-                        elif impacto_max == 3:
-                            bg_color = "#FF8C00"
-                            text_color = "white"
-                            emoji = "🟠"
-                        elif impacto_max == 2:
-                            bg_color = "#FFD700"
-                            text_color = "#333"
-                            emoji = "🟡"
-                        else:
-                            bg_color = "#4CAF50"
-                            text_color = "white"
-                            emoji = "🟢"
-
-                        tooltip_html = "<div class='tooltip-content'>"
-                        tooltip_html += f"<strong>📅 {dia} de {calendar.month_name[mes]}</strong><br/><br/>"
-
-                        eventos_ordenados = eventos_dia.sort_values("impacto", ascending=False)
-
-                        for _, evento in eventos_ordenados.iterrows():
-                            impacto_evento = int(evento["impacto"])
-                            emoji_impacto = "🔴" if impacto_evento == 4 else "🟠" if impacto_evento == 3 else "🟡" if impacto_evento == 2 else "🟢"
-
-                            nombre_evento = evento["evento_nombre"]
-                            if len(nombre_evento) > 40:
-                                nombre_evento = nombre_evento[:37] + "..."
-
-                            tooltip_html += f"<div class='tooltip-evento'>{emoji_impacto} {nombre_evento}</div>"
-
-                        tooltip_html += "</div>"
-
-                        st.markdown(
-                            f"""
-                            <div class='calendario-dia' style='background-color: {bg_color}; padding: 15px; border-radius: 8px; text-align: center; height: 100px; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative;'>
-                                <div style='font-size: 1.3em; font-weight: bold; color: {text_color};'>{dia}</div>
-                                <div style='font-size: 0.85em; color: {text_color}; margin-top: 5px;'>{emoji} {num_eventos} evento{"s" if num_eventos > 1 else ""}</div>
-                                <div style='font-size: 0.8em; color: {text_color};'>Impacto: {impacto_max}/4</div>
-                                {tooltip_html}
+                            <div style="font-size: 0.8em; color: {text_color};">
+                                Impact {max_impact}/4
                             </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
+                            {tooltip_html}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
 
 
-# ==========================================
-# SIDEBAR
-# ==========================================
+st.title("Traffic Light")
+st.caption("Multi-month impact overview by sector and event type.")
+
+master_df = build_master_events_df()
+
+if master_df.empty:
+    st.warning("No events are available.")
+    st.stop()
+
+sectors = ["General"] + get_available_sectors()
+
 with st.sidebar:
-    st.markdown("# 📊 Filtros y Controles")
-    st.markdown("---")
+    st.header("Filters")
 
-    sectores_disponibles = obtener_sectores_disponibles()
-    sector_seleccionado = st.selectbox(
-        "🎯 Sector",
-        sectores_disponibles,
-        index=sectores_disponibles.index("General") if "General" in sectores_disponibles else 0
+    selected_sector = st.selectbox(
+        "Sector",
+        sectors,
+        index=sectors.index("General") if "General" in sectors else 0
     )
 
     st.markdown("---")
-    st.subheader("📅 Período")
+    st.subheader("Base period")
 
-    col_mes, col_anio = st.columns(2)
+    current_year = datetime.now().year
+    current_month = datetime.now().month
 
-    with col_mes:
-        mes_seleccionado = st.selectbox(
-            "Mes",
-            range(1, 13),
-            index=datetime.now().month - 1,
+    col1, col2 = st.columns(2)
+    with col1:
+        selected_month = st.selectbox(
+            "Month",
+            list(range(1, 13)),
+            index=current_month - 1,
             format_func=lambda x: calendar.month_name[x]
         )
-
-    with col_anio:
-        anio_seleccionado = st.selectbox(
-            "Año",
-            range(2026, 2028),
+    with col2:
+        selected_year = st.selectbox(
+            "Year",
+            list(range(current_year, current_year + 3)),
             index=0
         )
 
     st.markdown("---")
-    st.subheader("🔍 Tipo de Eventos")
+    st.subheader("Event types")
 
-    mostrar_economicos = st.checkbox("📊 Eventos Económicos", value=True)
-    mostrar_magnificent7 = st.checkbox("💎 Magnificent 7", value=True)
-    mostrar_dow_jones = st.checkbox("🏛️ Dow Jones 30", value=True)
-    mostrar_top3_sector = st.checkbox("🏆 Top 3 Sector", value=True)
-    mostrar_noticias_externas = st.checkbox("🌐 Noticias Externas", value=True)
+    show_economic = st.checkbox("Economic Events", value=True)
+    show_mag7 = st.checkbox("Magnificent 7", value=True)
+    show_dow = st.checkbox("Dow Jones 30", value=True)
+    show_top3 = st.checkbox("Top 3 Sector", value=True)
+    show_external = st.checkbox("External News", value=True)
 
     st.markdown("---")
-
-    impacto_minimo = st.select_slider(
-        "Impacto mínimo",
+    min_impact = st.select_slider(
+        "Minimum impact",
         options=[1, 2, 3, 4],
         value=1,
-        format_func=lambda x: f"{'⭐' * x} {x}/4"
+        format_func=lambda x: f"{x}/4"
     )
 
     st.markdown("---")
-
-    if st.button("🔄 Refrescar Datos", use_container_width=True):
+    if st.button("Refresh data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
+allowed_categories = []
+if show_economic:
+    allowed_categories.append("Economic Event")
+if show_mag7:
+    allowed_categories.append("Magnificent 7")
+if show_dow:
+    allowed_categories.append("Dow Jones 30")
+if show_top3:
+    allowed_categories.append("Top 3 Sector")
+if show_external:
+    allowed_categories.append("External News")
 
-# ==========================================
-# PAGE
-# ==========================================
-st.title("🚦 Semáforo de Eventos")
-st.markdown("Visualiza eventos por mes según el impacto para el sector seleccionado.")
+display_df = master_df.copy()
+display_df = display_df[display_df["date"].notna()].copy()
 
-df_eventos, df_impactos = obtener_eventos_con_impacto()
-
-if df_eventos.empty:
-    st.warning("⚠️ No hay eventos disponibles.")
+if allowed_categories:
+    display_df = display_df[display_df["category"].isin(allowed_categories)].copy()
 else:
-    categorias_permitidas = []
-    if mostrar_economicos:
-        categorias_permitidas.append("Evento Económico")
-    if mostrar_magnificent7:
-        categorias_permitidas.append("Magnificent 7")
-    if mostrar_dow_jones:
-        categorias_permitidas.append("Dow Jones 30")
-    if mostrar_top3_sector:
-        categorias_permitidas.append("Top 3 Sector")
-    if mostrar_noticias_externas:
-        categorias_permitidas.append("Noticia Externa")
+    display_df = pd.DataFrame(columns=display_df.columns)
 
-    st.markdown("### 📅 Seleccionar Períodos")
+if not display_df.empty:
+    display_df["impact_score"] = display_df.apply(
+        lambda row: get_row_impact(row, selected_sector),
+        axis=1
+    )
+    display_df = display_df[display_df["impact_score"] >= min_impact].copy()
 
-    col1, col2 = st.columns(2)
+st.markdown("### Select months")
 
-    with col1:
-        mes_inicio = mes_seleccionado
-        anio_inicio = anio_seleccionado
-        anio_fin = anio_seleccionado + 2
+month_options = get_month_options(
+    start_year=selected_year,
+    end_year=selected_year + 2,
+    start_month=selected_month
+)
 
-        meses_opciones = []
-        for anio in range(anio_inicio, anio_fin + 1):
-            mes_start = mes_inicio if anio == anio_inicio else 1
-            for mes in range(mes_start, 13):
-                meses_opciones.append((anio, mes))
+selected_months = st.multiselect(
+    "Choose one or more months",
+    month_options,
+    default=[(selected_year, selected_month)],
+    format_func=lambda x: f"{calendar.month_name[x[1]]} {x[0]}"
+)
 
-        meses_seleccionados = st.multiselect(
-            "Selecciona uno o más meses",
-            meses_opciones,
-            default=[(anio_seleccionado, mes_seleccionado)],
-            format_func=lambda x: f"{calendar.month_name[x[1]]} {x[0]}"
-        )
+if not selected_months:
+    st.warning("Select at least one month.")
+    st.stop()
 
-    with col2:
-        if meses_seleccionados:
-            st.info(f"📊 **{len(meses_seleccionados)} mes(es) seleccionado(s)**")
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Selected months", len(selected_months))
+with col2:
+    st.metric("Filtered events", len(display_df))
+with col3:
+    high_impact_count = len(display_df[display_df["impact_score"] == 4]) if not display_df.empty else 0
+    st.metric("Impact 4 events", high_impact_count)
 
-    st.markdown("---")
+st.markdown("---")
 
-    if not meses_seleccionados:
-        st.warning("⚠️ Selecciona al menos un mes para mostrar")
+for i, (year, month) in enumerate(selected_months):
+    month_start = datetime(year, month, 1).date()
+    month_end = datetime(year, month, calendar.monthrange(year, month)[1]).date()
+
+    month_df = display_df[
+        (display_df["date"].dt.date >= month_start) &
+        (display_df["date"].dt.date <= month_end)
+    ].copy()
+
+    st.markdown(f"## {calendar.month_name[month]} {year}")
+
+    if month_df.empty:
+        st.info("No events match the selected filters for this month.")
     else:
-        for idx, (anio_mes, mes_mes) in enumerate(meses_seleccionados):
-            primer_dia_mes = datetime(anio_mes, mes_mes, 1).date()
-            ultimo_dia_mes = datetime(anio_mes, mes_mes, calendar.monthrange(anio_mes, mes_mes)[1]).date()
+        render_month_calendar(year, month, month_df)
 
-            st.markdown(f"## 📅 {calendar.month_name[mes_mes]} {anio_mes}")
-
-            df_semaforo = df_eventos[
-                (df_eventos["fecha"].notna()) &
-                (df_eventos["fecha"].dt.date >= primer_dia_mes) &
-                (df_eventos["fecha"].dt.date <= ultimo_dia_mes)
-            ].copy()
-
-            df_semaforo["impacto"] = df_semaforo["evento_nombre"].apply(
-                lambda x: obtener_impacto_evento(x, sector_seleccionado, df_impactos)
-            )
-
-            df_semaforo = df_semaforo[df_semaforo["impacto"] >= 1]
-
-            if categorias_permitidas:
-                df_semaforo = df_semaforo[df_semaforo["categoria"].isin(categorias_permitidas)]
-
-            df_semaforo = df_semaforo[df_semaforo["impacto"] >= impacto_minimo]
-
-            generar_calendario_semaforo(anio_mes, mes_mes, df_semaforo)
-
-            if idx < len(meses_seleccionados) - 1:
-                st.markdown("---")
-                st.markdown("")
-
+    if i < len(selected_months) - 1:
         st.markdown("---")
-        st.markdown("### 📖 Leyenda")
 
-        col1, col2, col3, col4, col5 = st.columns(5)
-        with col1:
-            st.markdown("🟢 **Bajo (1/4)**")
-        with col2:
-            st.markdown("🟡 **Medio (2/4)**")
-        with col3:
-            st.markdown("🟠 **Alto (3/4)**")
-        with col4:
-            st.markdown("🔴 **Muy Alto (4/4)**")
-        with col5:
-            st.markdown("⚪ **Sin eventos**")
+st.markdown("---")
+st.markdown("### Legend")
+
+l1, l2, l3, l4, l5 = st.columns(5)
+with l1:
+    st.markdown("🟢 Low (1/4)")
+with l2:
+    st.markdown("🟡 Medium (2/4)")
+with l3:
+    st.markdown("🟠 High (3/4)")
+with l4:
+    st.markdown("🔴 Very High (4/4)")
+with l5:
+    st.markdown("⬜ No events")
