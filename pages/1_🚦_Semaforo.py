@@ -82,6 +82,36 @@ def get_day_color(max_impact: int):
     return "#4CAF50", "white", "🟢"
 
 
+def normalize_category(value):
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip().lower()
+
+    if text in ["economic event", "evento económico", "evento economico", "evento econmico"]:
+        return "Economic Event"
+    if text in ["magnificent 7", "mag 7", "mag7"]:
+        return "Magnificent 7"
+    if text in ["dow jones 30", "dow jones"]:
+        return "Dow Jones 30"
+    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3 sector events"]:
+        return "Top 3 Sector"
+    if text in ["top 3 sector", "top 3 sector ", "top 3 sectors", "top 3 sector."]:
+        return "Top 3 Sector"
+    if text in ["top 3 sector", "top 3 sectors", "top 3 sector "]:
+        return "Top 3 Sector"
+    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector."]:
+        return "Top 3 Sector"
+    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3 sector event"]:
+        return "Top 3 Sector"
+    if text in ["top 3 sector", "top 3 sectors", "top 3 sector ", "top 3 sector.", "top 3"]:
+        return "Top 3 Sector"
+    if text in ["external news", "noticia externa"]:
+        return "External News"
+
+    return str(value).strip()
+
+
 def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
     cal = calendar.monthcalendar(year, month)
     week_days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -196,6 +226,10 @@ if master_df.empty:
     st.warning("No events are available.")
     st.stop()
 
+master_df = master_df.copy()
+master_df["date"] = pd.to_datetime(master_df["date"], errors="coerce")
+master_df["category"] = master_df["category"].apply(normalize_category)
+
 sectors = ["General"] + [s for s in get_available_sectors() if s != "General"]
 
 with st.sidebar:
@@ -252,15 +286,15 @@ with st.sidebar:
 
 allowed_categories = []
 if show_economic:
-    allowed_categories.extend(["Economic Event", "Evento Económico", "Evento Econmico"])
+    allowed_categories.append("Economic Event")
 if show_mag7:
     allowed_categories.append("Magnificent 7")
 if show_dow:
-    allowed_categories.extend(["Dow Jones 30", "Dow Jones 30 that are not mentioned"])
+    allowed_categories.append("Dow Jones 30")
 if show_top3:
-    allowed_categories.extend(["Top 3 Sector", "3 big companies for each sector"])
+    allowed_categories.append("Top 3 Sector")
 if show_external:
-    allowed_categories.extend(["External News", "Noticia Externa"])
+    allowed_categories.append("External News")
 
 display_df = master_df.copy()
 display_df = display_df[display_df["date"].notna()].copy()
@@ -276,7 +310,7 @@ if not display_df.empty:
     )
     display_df = display_df[display_df["impact_score"] >= min_impact].copy()
 else:
-    display_df["impact_score"] = []
+    display_df["impact_score"] = pd.Series(dtype="int64")
 
 st.markdown("### Select months")
 
