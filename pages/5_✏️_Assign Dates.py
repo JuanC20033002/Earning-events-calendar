@@ -1,5 +1,4 @@
-from menu import render_menu
-render_menu()
+
 import pandas as pd
 from datetime import datetime
 import streamlit as st

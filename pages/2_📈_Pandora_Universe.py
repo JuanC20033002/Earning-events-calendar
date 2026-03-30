@@ -1,5 +1,4 @@
-from menu import render_menu
-render_menu()
+
 import streamlit as st
 from supabase import create_client, Client
 import pandas as pd
