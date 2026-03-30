@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-from data_loader import build_master_events_df, get_available_sectors, get_row_impact
+from data_loader import build_master_events_df, get_available_sectors, load_impact_data
 
 
 st.set_page_config(page_title="Traffic Light", page_icon="🚦", layout="wide")
@@ -88,6 +88,12 @@ def normalize_text(value):
     return str(value).strip()
 
 
+def normalize_key(value):
+    if pd.isna(value):
+        return None
+    return str(value).strip().lower()
+
+
 def normalize_category(value):
     if pd.isna(value):
         return None
@@ -109,6 +115,35 @@ def normalize_category(value):
     }
 
     return mapping.get(text, str(value).strip())
+
+
+def get_event_impact(event_name: str, selected_sector: str, impact_df: pd.DataFrame) -> int:
+    if impact_df.empty or not event_name:
+        return 0
+
+    event_key = normalize_key(event_name)
+    sector_key = normalize_key(selected_sector)
+
+    matches = impact_df[impact_df["event_key"] == event_key].copy()
+
+    if matches.empty:
+        return 0
+
+    if sector_key == "general":
+        try:
+            return int(matches["impact_score"].max())
+        except Exception:
+            return 0
+
+    sector_matches = matches[matches["sector_key"] == sector_key]
+
+    if sector_matches.empty:
+        return 0
+
+    try:
+        return int(sector_matches["impact_score"].max())
+    except Exception:
+        return 0
 
 
 def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
@@ -220,6 +255,7 @@ st.title("Traffic Light")
 st.caption("Multi-month impact overview by sector and event type.")
 
 master_df = build_master_events_df()
+impact_df = load_impact_data()
 
 if master_df.empty:
     st.warning("No events are available.")
@@ -229,6 +265,14 @@ master_df = master_df.copy()
 master_df["event_name"] = master_df["event_name"].apply(normalize_text)
 master_df["category"] = master_df["category"].apply(normalize_category)
 master_df["date"] = pd.to_datetime(master_df["date"], errors="coerce")
+
+impact_df = impact_df.copy()
+if not impact_df.empty:
+    impact_df["event_name"] = impact_df["event_name"].apply(normalize_text)
+    impact_df["sector"] = impact_df["sector"].apply(normalize_text)
+    impact_df["event_key"] = impact_df["event_name"].apply(normalize_key)
+    impact_df["sector_key"] = impact_df["sector"].apply(normalize_key)
+    impact_df["impact_score"] = pd.to_numeric(impact_df["impact_score"], errors="coerce").fillna(0)
 
 sectors = ["General"] + [s for s in get_available_sectors() if s != "General"]
 
@@ -306,7 +350,7 @@ else:
 
 if not display_df.empty:
     display_df["impact_score"] = display_df["event_name"].apply(
-        lambda event_name: get_row_impact(event_name, selected_sector)
+        lambda event_name: get_event_impact(event_name, selected_sector, impact_df)
     )
     display_df = display_df[display_df["impact_score"] >= min_impact].copy()
 else:
@@ -375,13 +419,3 @@ with l4:
     st.markdown("🔴 Very High (4/4)")
 with l5:
     st.markdown("⬜ No events")
-
-# Temporary debug block
-with st.expander("Debug"):
-    st.write("Master rows:", len(master_df))
-    st.write("Display rows:", len(display_df))
-    if not master_df.empty:
-        st.write(master_df[["event_name", "category", "date"]].head(20))
-        st.write(master_df["category"].value_counts(dropna=False))
-    if not display_df.empty:
-        st.write(display_df[["event_name", "category", "date", "impact_score"]].head(20))
