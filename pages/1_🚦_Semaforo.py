@@ -67,8 +67,7 @@ def get_month_options(start_year: int, end_year: int, start_month: int):
     options = []
     for year in range(start_year, end_year + 1):
         month_start = start_month if year == start_year else 1
-        month_end = 12
-        for month in range(month_start, month_end + 1):
+        for month in range(month_start, 13):
             options.append((year, month))
     return options
 
@@ -94,6 +93,7 @@ def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
 
     for week in cal:
         cols = st.columns(7)
+
         for i, day in enumerate(week):
             with cols[i]:
                 if day == 0:
@@ -138,50 +138,53 @@ def render_month_calendar(year: int, month: int, month_df: pd.DataFrame):
                         """,
                         unsafe_allow_html=True
                     )
-                else:
-                    max_impact = int(day_events["impact_score"].max())
-                    event_count = len(day_events)
-                    bg_color, text_color, emoji = get_day_color(max_impact)
+                    continue
 
-                    tooltip_html = f"<div class='tooltip-content'><strong>{day} {calendar.month_name[month]}</strong><br><br>"
-                    day_events = day_events.sort_values("impact_score", ascending=False)
+                max_impact = int(day_events["impact_score"].max())
+                event_count = len(day_events)
+                bg_color, text_color, emoji = get_day_color(max_impact)
 
-                    for _, event in day_events.iterrows():
-                        impact = int(event["impact_score"])
-                        impact_icon = "🔴" if impact >= 4 else "🟠" if impact == 3 else "🟡" if impact == 2 else "🟢"
-                        event_name = str(event["event_name"])
-                        if len(event_name) > 40:
-                            event_name = event_name[:37] + "..."
-                        tooltip_html += f"<div class='tooltip-event'>{impact_icon} {event_name}</div>"
+                tooltip_html = f"<div class='tooltip-content'><strong>{day} {calendar.month_name[month]}</strong><br><br>"
+                day_events = day_events.sort_values("impact_score", ascending=False)
 
-                    tooltip_html += "</div>"
+                for _, event in day_events.iterrows():
+                    impact = int(event["impact_score"])
+                    impact_icon = "🔴" if impact >= 4 else "🟠" if impact == 3 else "🟡" if impact == 2 else "🟢"
+                    event_name = str(event["event_name"])
 
-                    st.markdown(
-                        f"""
-                        <div class="calendar-day" style="
-                            background-color: {bg_color};
-                            padding: 15px;
-                            border-radius: 8px;
-                            text-align: center;
-                            height: 100px;
-                            display: flex;
-                            flex-direction: column;
-                            justify-content: center;
-                            align-items: center;
-                            position: relative;
-                        ">
-                            <div style="font-size: 1.3em; font-weight: bold; color: {text_color};">{day}</div>
-                            <div style="font-size: 0.85em; color: {text_color}; margin-top: 5px;">
-                                {emoji} {event_count} event{"s" if event_count != 1 else ""}
-                            </div>
-                            <div style="font-size: 0.8em; color: {text_color};">
-                                Impact {max_impact}/4
-                            </div>
-                            {tooltip_html}
+                    if len(event_name) > 40:
+                        event_name = event_name[:37] + "..."
+
+                    tooltip_html += f"<div class='tooltip-event'>{impact_icon} {event_name}</div>"
+
+                tooltip_html += "</div>"
+
+                st.markdown(
+                    f"""
+                    <div class="calendar-day" style="
+                        background-color: {bg_color};
+                        padding: 15px;
+                        border-radius: 8px;
+                        text-align: center;
+                        height: 100px;
+                        display: flex;
+                        flex-direction: column;
+                        justify-content: center;
+                        align-items: center;
+                        position: relative;
+                    ">
+                        <div style="font-size: 1.3em; font-weight: bold; color: {text_color};">{day}</div>
+                        <div style="font-size: 0.85em; color: {text_color}; margin-top: 5px;">
+                            {emoji} {event_count} event{"s" if event_count != 1 else ""}
                         </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
+                        <div style="font-size: 0.8em; color: {text_color};">
+                            Impact {max_impact}/4
+                        </div>
+                        {tooltip_html}
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
 
 
 st.title("Traffic Light")
@@ -317,8 +320,8 @@ for i, (year, month) in enumerate(selected_months):
 
     if month_df.empty:
         st.info("No events match the selected filters for this month.")
-    else:
-        render_month_calendar(year, month, month_df)
+
+    render_month_calendar(year, month, month_df)
 
     if i < len(selected_months) - 1:
         st.markdown("---")
