@@ -10,11 +10,11 @@ st.set_page_config(
 pages = []
 
 try:
-    pages.append(st.Page("pages/1_traffic_light.py", title="Traffic Light", icon="🚦", default=True))
-    pages.append(st.Page("pages/2_pandora_universe.py", title="Pandora Universe", icon="📈"))
-    pages.append(st.Page("pages/3_calendar.py", title="Calendar", icon="🗓️"))
-    pages.append(st.Page("pages/4_external_news.py", title="External News", icon="🌐"))
-    pages.append(st.Page("pages/5_assign_dates.py", title="Assign Dates", icon="📝"))
+    pages.append(st.Page("pages/1_🚦_Traffic_Light.py", title="Traffic Light", icon="🚦", default=True))
+    pages.append(st.Page("pages/2_📈_Pandora_Universe.py", title="Pandora Universe", icon="📈"))
+    pages.append(st.Page("pages/3_🗓️_Calendar.py", title="Calendar", icon="🗓️"))
+    pages.append(st.Page("pages/4_🌐_External_News.py", title="External News", icon="🌐"))
+    pages.append(st.Page("pages/5_📝_Assign_Dates.py", title="Assign Dates", icon="📝"))
 except Exception as e:
     st.title("Economic Events Calendar")
     st.error("A page path is invalid in streamlit_app.py.")
