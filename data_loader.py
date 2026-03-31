@@ -5,8 +5,8 @@ from supabase import create_client
 
 
 ECONOMIC_EVENTS_FILE = "Eventos_economicos.csv"
-ECONOMIC_DATES_FILE = "Fechas_eventos_economicos.csv"
 EARNINGS_FILE = "Earnings_Events.csv"
+ECONOMIC_DATES_TABLE = "economic_event_dates"
 
 
 def _get_supabase_client():
@@ -54,9 +54,46 @@ def _get_sector_columns(df: pd.DataFrame):
     excluded = {
         "fecha", "date", "tipo_evento", "tipoevento", "event_name", "evento_nombre",
         "eventonombre", "symbol", "ticker", "category", "description", "country",
-        "type", "source_group", "source", "updated_at", "updatedat"
+        "type", "source_group", "source", "updated_at", "updatedat", "id"
     }
     return [c for c in df.columns if c not in excluded]
+
+
+def normalize_text(value):
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def normalize_key(value):
+    if pd.isna(value):
+        return None
+    text = str(value).strip().lower()
+    return text if text else None
+
+
+def normalize_category(value):
+    if pd.isna(value):
+        return None
+
+    text = str(value).strip().lower()
+
+    mapping = {
+        "economic event": "Economic Event",
+        "evento económico": "Economic Event",
+        "evento economico": "Economic Event",
+        "evento econmico": "Economic Event",
+        "magnificent 7": "Magnificent 7",
+        "dow jones 30": "Dow Jones 30",
+        "dow jones": "Dow Jones 30",
+        "top 3 sector": "Top 3 Sector",
+        "top 3 sectors": "Top 3 Sector",
+        "external news": "External News",
+        "noticia externa": "External News",
+    }
+
+    return mapping.get(text, str(value).strip())
 
 
 @st.cache_data(ttl=300)
@@ -73,7 +110,7 @@ def get_available_sectors():
 def load_impact_data():
     frames = []
 
-    # Economic events matrix
+    # Economic events matrix from CSV
     try:
         econ_df = pd.read_csv(ECONOMIC_EVENTS_FILE)
         econ_df = _standardize_columns(econ_df)
@@ -96,13 +133,9 @@ def load_impact_data():
     except Exception:
         pass
 
-    # Earnings matrix
+    # Earnings matrix from CSV
     try:
-        if EARNINGS_FILE.lower().endswith(".csv"):
-            earn_df = pd.read_csv(EARNINGS_FILE)
-        else:
-            earn_df = pd.read_excel(EARNINGS_FILE)
-
+        earn_df = pd.read_csv(EARNINGS_FILE)
         earn_df = _standardize_columns(earn_df)
 
         if not earn_df.empty and "symbol" in earn_df.columns:
@@ -123,7 +156,7 @@ def load_impact_data():
     except Exception:
         pass
 
-    # Supabase overrides / additions
+    # Optional Supabase overrides / additions for impacts
     client = _get_supabase_client()
     if client is not None:
         try:
@@ -150,6 +183,10 @@ def load_impact_data():
         return pd.DataFrame(columns=["event_name", "sector", "impact_score"])
 
     impact_df = pd.concat(frames, ignore_index=True).drop_duplicates()
+    impact_df["event_name"] = impact_df["event_name"].apply(normalize_text)
+    impact_df["sector"] = impact_df["sector"].apply(normalize_text)
+    impact_df["impact_score"] = pd.to_numeric(impact_df["impact_score"], errors="coerce")
+    impact_df = impact_df.dropna(subset=["event_name", "sector", "impact_score"]).copy()
 
     return impact_df
 
@@ -161,8 +198,8 @@ def get_row_impact(event_name, sector, impact_df=None):
     if impact_df.empty or not event_name or not sector:
         return 0
 
-    event_name = str(event_name).strip()
-    sector = str(sector).strip()
+    event_name = normalize_text(event_name)
+    sector = normalize_text(sector)
 
     result = impact_df[
         (impact_df["event_name"] == event_name) &
@@ -179,30 +216,60 @@ def get_row_impact(event_name, sector, impact_df=None):
 
 
 @st.cache_data(ttl=300)
-def load_economic_event_dates():
-    client = _get_supabase_client()
-    if client is None:
-        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
-
+def load_economic_events():
     try:
-        response = client.table("economic_event_dates").select("*").order("date").execute()
-        df = pd.DataFrame(response.data or [])
+        df = pd.read_csv(ECONOMIC_EVENTS_FILE)
     except Exception:
-        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
-
-    if df.empty:
-        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+        return pd.DataFrame(columns=[
+            "event_name", "category", "description", "ticker",
+            "country", "type", "source_group"
+        ])
 
     df = _standardize_columns(df)
 
-    df = df.rename(columns={
-        "event_name": "event_name",
-        "date": "date",
-        "source": "source",
-        "updated_at": "updated_at",
-    })
+    if "tipo_evento" in df.columns:
+        df = df.rename(columns={"tipo_evento": "event_name"})
+    elif "tipoevento" in df.columns:
+        df = df.rename(columns={"tipoevento": "event_name"})
 
-    df = _ensure_columns(df, ["event_name", "date", "source", "updated_at"])
+    df = _ensure_columns(df, [
+        "event_name", "description", "ticker", "country", "type"
+    ])
+
+    df = _clean_text_col(df, "event_name")
+    df = _clean_text_col(df, "description")
+    df = _clean_text_col(df, "ticker")
+    df = _clean_text_col(df, "country")
+    df = _clean_text_col(df, "type")
+
+    df = df.dropna(subset=["event_name"]).copy()
+    df["category"] = "Economic Event"
+    df["type"] = df["type"].fillna("economic")
+    df["source_group"] = "economic"
+
+    return df[[
+        "event_name", "category", "description", "ticker",
+        "country", "type", "source_group"
+    ]].drop_duplicates()
+
+
+@st.cache_data(ttl=300)
+def load_economic_event_dates():
+    client = _get_supabase_client()
+    if client is None:
+        return pd.DataFrame(columns=["id", "event_name", "date", "source", "updated_at"])
+
+    try:
+        response = client.table(ECONOMIC_DATES_TABLE).select("*").order("date").execute()
+        df = pd.DataFrame(response.data or [])
+    except Exception:
+        return pd.DataFrame(columns=["id", "event_name", "date", "source", "updated_at"])
+
+    if df.empty:
+        return pd.DataFrame(columns=["id", "event_name", "date", "source", "updated_at"])
+
+    df = _standardize_columns(df)
+    df = _ensure_columns(df, ["id", "event_name", "date", "source", "updated_at"])
 
     df = _clean_text_col(df, "event_name")
     df = _clean_text_col(df, "source")
@@ -210,7 +277,7 @@ def load_economic_event_dates():
 
     df = df.dropna(subset=["event_name", "date"]).copy()
 
-    return df[["event_name", "date", "source", "updated_at"]]
+    return df[["id", "event_name", "date", "source", "updated_at"]]
 
 
 def build_economic_events_with_dates():
@@ -231,7 +298,7 @@ def build_economic_events_with_dates():
             "ticker", "country", "type", "source_group"
         ]]
 
-    merged = events_df.merge(dates_df, on="event_name", how="left")
+    merged = events_df.merge(dates_df[["event_name", "date"]], on="event_name", how="left")
 
     merged["source_group"] = "economic"
     merged["type"] = merged["type"].fillna("economic")
@@ -246,10 +313,7 @@ def build_economic_events_with_dates():
 @st.cache_data(ttl=300)
 def load_earnings_events():
     try:
-        if EARNINGS_FILE.lower().endswith(".csv"):
-            df = pd.read_csv(EARNINGS_FILE)
-        else:
-            df = pd.read_excel(EARNINGS_FILE)
+        df = pd.read_csv(EARNINGS_FILE)
     except Exception:
         return pd.DataFrame(columns=[
             "event_name", "category", "date", "description",
@@ -278,6 +342,7 @@ def load_earnings_events():
     df = _clean_text_col(df, "event_name")
     df = _clean_text_col(df, "ticker")
     df = _clean_text_col(df, "category")
+    df["category"] = df["category"].apply(normalize_category)
 
     df["description"] = None
     df["country"] = None
@@ -324,7 +389,6 @@ def load_external_news():
         "fecha": "date",
         "descripción": "description",
         "descripcion": "description",
-        "ticker": "ticker",
         "pais": "country",
         "país": "country",
         "tipo": "type",
@@ -345,7 +409,7 @@ def load_external_news():
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     df = df.dropna(subset=["event_name"]).copy()
-    df["category"] = df["category"].fillna("External News")
+    df["category"] = df["category"].fillna("External News").apply(normalize_category)
     df["type"] = df["type"].fillna("external_news")
     df["source_group"] = "external_news"
 
@@ -370,6 +434,8 @@ def build_master_events_df():
         ])
 
     master = pd.concat(frames, ignore_index=True, sort=False)
+    master["event_name"] = master["event_name"].apply(normalize_text)
+    master["category"] = master["category"].apply(normalize_category)
     master["date"] = pd.to_datetime(master["date"], errors="coerce")
     master = master.sort_values(["date", "event_name"], ascending=[True, True]).reset_index(drop=True)
 
