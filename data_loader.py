@@ -179,42 +179,38 @@ def get_row_impact(event_name, sector, impact_df=None):
 
 
 @st.cache_data(ttl=300)
-def load_economic_events():
+def load_economic_event_dates():
+    client = _get_supabase_client()
+    if client is None:
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+
     try:
-        df = pd.read_csv(ECONOMIC_EVENTS_FILE)
+        response = client.table("economic_event_dates").select("*").order("date").execute()
+        df = pd.DataFrame(response.data or [])
     except Exception:
-        return pd.DataFrame(columns=[
-            "event_name", "category", "description", "ticker",
-            "country", "type", "source_group"
-        ])
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+
+    if df.empty:
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
 
     df = _standardize_columns(df)
 
-    if "tipo_evento" in df.columns:
-        df = df.rename(columns={"tipo_evento": "event_name"})
-    elif "tipoevento" in df.columns:
-        df = df.rename(columns={"tipoevento": "event_name"})
+    df = df.rename(columns={
+        "event_name": "event_name",
+        "date": "date",
+        "source": "source",
+        "updated_at": "updated_at",
+    })
 
-    df = _ensure_columns(df, [
-        "event_name", "description", "ticker", "country", "type"
-    ])
+    df = _ensure_columns(df, ["event_name", "date", "source", "updated_at"])
 
     df = _clean_text_col(df, "event_name")
-    df = _clean_text_col(df, "description")
-    df = _clean_text_col(df, "ticker")
-    df = _clean_text_col(df, "country")
-    df = _clean_text_col(df, "type")
+    df = _clean_text_col(df, "source")
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
-    df = df.dropna(subset=["event_name"]).copy()
-    df["category"] = "Economic Event"
-    df["type"] = df["type"].fillna("economic")
-    df["source_group"] = "economic"
+    df = df.dropna(subset=["event_name", "date"]).copy()
 
-    return df[[
-        "event_name", "category", "description", "ticker",
-        "country", "type", "source_group"
-    ]].drop_duplicates()
-
+    return df[["event_name", "date", "source", "updated_at"]]
 
 @st.cache_data(ttl=300)
 def load_economic_event_dates():

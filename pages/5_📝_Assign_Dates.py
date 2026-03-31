@@ -1,28 +1,29 @@
-
 import pandas as pd
 from datetime import datetime
 import streamlit as st
 
-from data_loader import load_economic_events, load_economic_event_dates
+from data_loader import load_economic_events, load_economic_event_dates, _get_supabase_client
 
 st.set_page_config(page_title="Assign Dates", page_icon="🗓️", layout="wide")
 
-ECONOMIC_DATES_FILE = "Fechas_eventos_economicos.csv"
+SUPABASE_TABLE = "economic_event_dates"
 
 
-def normalize_dates_df(df):
-    rename_map = {
-        "evento_nombre": "event_name",
-        "eventonombre": "event_name",
-        "Evento": "event_name",
-        "fecha": "date",
-        "Fecha": "date",
-        "fuente": "source",
-        "Fuente": "source",
-        "updated_at": "updated_at",
-        "updatedat": "updated_at",
-    }
-    df = df.rename(columns=rename_map)
+def fetch_dates_from_supabase():
+    client = _get_supabase_client()
+    if client is None:
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+
+    try:
+        response = client.table(SUPABASE_TABLE).select("*").order("date").execute()
+        df = pd.DataFrame(response.data or [])
+    except Exception:
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+
+    if df.empty:
+        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
+
+    df.columns = [str(c).strip().lower() for c in df.columns]
 
     for col in ["event_name", "date", "source", "updated_at"]:
         if col not in df.columns:
@@ -30,70 +31,57 @@ def normalize_dates_df(df):
 
     df["event_name"] = df["event_name"].astype(str).str.strip()
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    return df
+    df = df.dropna(subset=["event_name", "date"]).copy()
 
-
-def read_dates_file():
-    try:
-        df = pd.read_csv(ECONOMIC_DATES_FILE)
-    except Exception:
-        df = pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
-    return normalize_dates_df(df)
+    return df[["event_name", "date", "source", "updated_at"]]
 
 
 def save_economic_event_date(event_name: str, new_date):
+    client = _get_supabase_client()
+    if client is None:
+        return False, "Supabase is not configured."
+
     try:
-        df_dates = read_dates_file()
-
-        new_date_ts = pd.to_datetime(new_date)
         event_name = str(event_name).strip()
+        new_date_ts = pd.to_datetime(new_date, errors="coerce")
 
-        duplicate_mask = (
-            (df_dates["event_name"] == event_name) &
-            (df_dates["date"] == new_date_ts)
-        )
+        if pd.isna(new_date_ts):
+            return False, "Invalid date."
 
-        if duplicate_mask.any():
+        existing = client.table(SUPABASE_TABLE).select("id").eq("event_name", event_name).eq(
+            "date", new_date_ts.strftime("%Y-%m-%d")
+        ).execute()
+
+        if existing.data:
             return False, "That exact date is already saved for this event."
 
-        new_row = pd.DataFrame([{
+        payload = {
             "event_name": event_name,
-            "date": new_date_ts,
+            "date": new_date_ts.strftime("%Y-%m-%d"),
             "source": "manual_app",
             "updated_at": datetime.now().isoformat()
-        }])
+        }
 
-        df_dates = pd.concat([df_dates, new_row], ignore_index=True)
-        df_dates = df_dates.dropna(subset=["event_name", "date"])
-        df_dates = df_dates.sort_values(["event_name", "date"]).reset_index(drop=True)
-        df_dates["date"] = df_dates["date"].dt.strftime("%Y-%m-%d")
-        df_dates.to_csv(ECONOMIC_DATES_FILE, index=False)
+        response = client.table(SUPABASE_TABLE).insert(payload).execute()
+
+        if not response.data:
+            return False, "Could not save the date."
 
         return True, "Date added successfully."
     except Exception as e:
         return False, f"Error: {e}"
 
 
-def delete_manual_date(event_name: str, date_value):
+def delete_manual_date(record_id):
+    client = _get_supabase_client()
+    if client is None:
+        return False, "Supabase is not configured."
+
     try:
-        df_dates = read_dates_file()
-        target_date = pd.to_datetime(date_value)
-        event_name = str(event_name).strip()
+        response = client.table(SUPABASE_TABLE).delete().eq("id", record_id).execute()
 
-        before = len(df_dates)
-        df_dates = df_dates[
-            ~(
-                (df_dates["event_name"] == event_name) &
-                (df_dates["date"] == target_date)
-            )
-        ].copy()
-
-        if len(df_dates) == before:
+        if response.data is None:
             return False, "No matching date was found to delete."
-
-        df_dates = df_dates.sort_values(["event_name", "date"]).reset_index(drop=True)
-        df_dates["date"] = pd.to_datetime(df_dates["date"], errors="coerce").dt.strftime("%Y-%m-%d")
-        df_dates.to_csv(ECONOMIC_DATES_FILE, index=False)
 
         return True, "Manual date deleted successfully."
     except Exception as e:
@@ -104,7 +92,7 @@ st.title("Assign Dates")
 st.caption("Assign one or more manual dates to economic events.")
 
 economic_df = load_economic_events().copy()
-dates_df = read_dates_file()
+dates_df = fetch_dates_from_supabase()
 
 if economic_df.empty:
     st.warning("No economic events available.")
@@ -185,8 +173,8 @@ else:
             show_date = show_date.strftime("%Y-%m-%d") if pd.notna(show_date) else "Invalid date"
             st.markdown(f"**{show_date}** · source: {row.get('source', 'unknown')}")
         with c2:
-            if st.button("Delete", key=f"del_{selected_event_name}_{i}", use_container_width=True):
-                ok, msg = delete_manual_date(selected_event_name, row["date"])
+            if st.button("Delete", key=f"del_{row.get('id', i)}", use_container_width=True):
+                ok, msg = delete_manual_date(row.get("id"))
                 if ok:
                     st.success(msg)
                     st.cache_data.clear()
