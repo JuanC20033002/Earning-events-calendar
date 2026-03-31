@@ -280,6 +280,11 @@ def decision_from_grade(grade):
     return "Intraday Only"
 
 
+def stock_style_from_dividends(row):
+    y = parse_numeric(row.get("Yield TTM"))
+    return "Value Stock" if y is not None and y > 0 else "Growth Stock"
+
+
 def warning_messages(row):
     msgs = []
     upcoming = parse_date(row.get("Upcoming Announce Date"))
@@ -335,6 +340,8 @@ def build_stock_result(row, df):
     overall = round(overall, 2)
     grade = grade_from_score(overall)
     decision = decision_from_grade(grade)
+    stock_style = stock_style_from_dividends(row)
+
     return {
         "symbol": row["Symbol"],
         "section_scores": section_scores,
@@ -342,6 +349,7 @@ def build_stock_result(row, df):
         "overall_score": overall,
         "grade": grade,
         "decision": decision,
+        "stock_style": stock_style,
         "warnings": warning_messages(row),
     }
 
@@ -419,6 +427,7 @@ if len(results) > 1:
             "Overall Score": r["overall_score"],
             "Grade": r["grade"],
             "Decision": r["decision"],
+            "Stock Style": r["stock_style"],
             **r["section_scores"],
         }
         for r in results
@@ -429,13 +438,15 @@ if len(results) > 1:
 for result in results:
     row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
     with st.expander(f"{result['symbol']} Analysis", expanded=True):
-        c1, c2, c3 = st.columns([1, 1, 1.2])
+        c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.1])
         with c1:
             st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['overall_score']:.1f}</div><div>Overall Score</div></div>", unsafe_allow_html=True)
         with c2:
             st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['grade']}</div><div>Letter Grade</div></div>", unsafe_allow_html=True)
         with c3:
             st.markdown(f"<div class='score-card'><div style='font-size:2.3rem;font-weight:700'>{result['decision']}</div><div>Classification</div></div>", unsafe_allow_html=True)
+        with c4:
+            st.markdown(f"<div class='score-card'><div style='font-size:2.2rem;font-weight:700'>{result['stock_style']}</div><div>Stock Style</div></div>", unsafe_allow_html=True)
 
         for box_type, msg in result["warnings"]:
             klass = "warning-box" if box_type == "warning" else "info-box"
