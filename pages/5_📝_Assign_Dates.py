@@ -72,13 +72,25 @@ def save_economic_event_date(event_name: str, new_date):
         return False, f"Error: {e}"
 
 
-def delete_manual_date(record_id):
+def delete_manual_date(event_name, event_date):
     client = _get_supabase_client()
     if client is None:
         return False, "Supabase is not configured."
 
     try:
-        response = client.table(SUPABASE_TABLE).delete().eq("id", record_id).execute()
+        event_name = str(event_name).strip()
+        event_date_ts = pd.to_datetime(event_date, errors="coerce")
+
+        if not event_name or pd.isna(event_date_ts):
+            return False, "Invalid event name or date."
+
+        response = (
+            client.table(SUPABASE_TABLE)
+            .delete()
+            .eq("event_name", event_name)
+            .eq("date", event_date_ts.strftime("%Y-%m-%d"))
+            .execute()
+        )
 
         if response.data is None:
             return False, "No matching date was found to delete."
@@ -168,13 +180,16 @@ if existing_dates.empty:
 else:
     for i, row in existing_dates.iterrows():
         c1, c2 = st.columns([4, 1])
+
+        row_date = pd.to_datetime(row["date"], errors="coerce")
+        row_date_text = row_date.strftime("%Y-%m-%d") if pd.notna(row_date) else "Invalid date"
+
         with c1:
-            show_date = pd.to_datetime(row["date"], errors="coerce")
-            show_date = show_date.strftime("%Y-%m-%d") if pd.notna(show_date) else "Invalid date"
-            st.markdown(f"**{show_date}** · source: {row.get('source', 'unknown')}")
+            st.markdown(f"**{row_date_text}** · source: {row.get('source', 'unknown')}")
+
         with c2:
-            if st.button("Delete", key=f"del_{row.get('id', i)}", use_container_width=True):
-                ok, msg = delete_manual_date(row.get("id"))
+            if st.button("Delete", key=f"del_{selected_event_name}_{row_date_text}_{i}", use_container_width=True):
+                ok, msg = delete_manual_date(selected_event_name, row["date"])
                 if ok:
                     st.success(msg)
                     st.cache_data.clear()
