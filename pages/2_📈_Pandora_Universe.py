@@ -1,284 +1,451 @@
-
-import streamlit as st
-from supabase import create_client, Client
+import math
 import pandas as pd
-import os
 import plotly.graph_objects as go
+import streamlit as st
 
+CSV_FILE = "Pandora_Universe.csv"
+TODAY = pd.Timestamp.today().normalize()
 
-# ==========================================
-# CONFIG
-# ==========================================
-try:
-    SUPABASE_URL = st.secrets["SUPABASE_URL"]
-    SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
-except Exception:
-    SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SECTION_WEIGHTS = {
+    "Core Fundamentals": 30.0,
+    "Ratings & Factor Grades": 30.0,
+    "Valuation & Size & Risk": 20.0,
+    "Earnings Signals": 20.0,
+}
 
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+METRIC_WEIGHTS = {
+    "Core Fundamentals": {
+        "Profit Margin": 4.0,
+        "FCF Margin": 4.0,
+        "EBITDA Margin": 3.0,
+        "Return on Assets": 3.0,
+        "Return on Equity": 3.0,
+        "Net Income 3Y": 2.0,
+        "Revenue 3Y": 2.0,
+        "Profitability Grade": 2.0,
+        "Div Safety": 1.5,
+        "Div Growth": 1.5,
+        "Div Yield": 1.5,
+        "Div Consistency": 1.5,
+        "Payout Ratio": 0.5,
+        "Yield TTM": 0.5,
+    },
+    "Ratings & Factor Grades": {
+        "Quant Rating": 7.0,
+        "SA Analyst Ratings": 6.0,
+        "Wall Street Ratings": 6.0,
+        "Valuation Grade": 4.0,
+        "Momentum Grade": 4.0,
+        "EPS Revision Grade": 3.0,
+    },
+    "Valuation & Size & Risk": {
+        "Market Cap": 4.0,
+        "P/E FWD": 4.0,
+        "Price / Sales": 3.5,
+        "EV / EBITDA": 3.5,
+        "Price / Book": 2.5,
+        "Altman Z Score": 2.5,
+    },
+    "Earnings Signals": {
+        "EPS YoY": 4.0,
+        "EPS Growth (FWD)": 4.0,
+        "Revenue YoY": 4.0,
+        "Revenue FWD": 4.0,
+        "EPS Surprise": 2.0,
+        "Revenue Surprise": 2.0,
+    },
+}
 
+LETTER_MAP = {
+    "A+": 100, "A": 95, "A-": 90,
+    "B+": 85, "B": 80, "B-": 75,
+    "C+": 70, "C": 65, "C-": 60,
+    "D+": 55, "D": 50, "D-": 45,
+    "F": 35,
+}
 
-# ==========================================
-# ESTILOS
-# ==========================================
-st.markdown("""
+GRADE_BANDS = [
+    (95, "A+"), (90, "A"), (85, "A-"), (80, "B+"), (75, "B"), (70, "B-"),
+    (65, "C+"), (60, "C"), (55, "C-"), (50, "D+"), (45, "D"), (0, "D-")
+]
+
+st.set_page_config(page_title="Pandora Universe", page_icon="📈", layout="wide")
+
+st.markdown(
+    """
     <style>
-    .main {
-        padding: 0rem 1rem;
+    .main {padding-top: 0.5rem;}
+    h1, h2, h3 {color: #0f766e;}
+    .stMultiSelect [data-baseweb="tag"] {background-color: #ccfbf1;}
+    .warning-box {
+        padding: 0.85rem 1rem; border-radius: 0.75rem; margin-bottom: 0.6rem;
+        border-left: 6px solid #f59e0b; background: #fffbeb; color: #92400e;
     }
-    .stButton>button {
-        width: 100%;
-        background-color: #FF4B4B;
-        color: white;
-        border-radius: 5px;
-        padding: 0.5rem;
-        font-weight: bold;
+    .info-box {
+        padding: 0.85rem 1rem; border-radius: 0.75rem; margin-bottom: 0.6rem;
+        border-left: 6px solid #0ea5e9; background: #f0f9ff; color: #075985;
     }
-    .stButton>button:hover {
-        background-color: #FF6B6B;
-        border-color: #FF4B4B;
+    .score-card {
+        padding: 1rem; border-radius: 1rem; background: linear-gradient(135deg, #0f766e, #14b8a6);
+        color: white; text-align: center; margin-bottom: 0.8rem;
     }
-    div[data-testid="stMetricValue"] {
-        font-size: 1.2rem;
-    }
-    h1 {
-        color: #FF4B4B;
-        padding-bottom: 1rem;
-    }
-    h2 {
-        color: #262730;
-        padding-top: 1rem;
-    }
+    .subtle {color: #64748b; font-size: 0.95rem;}
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
 
-# ==========================================
-# FUNCIONES
-# ==========================================
-def convertir_calificacion_a_numero(calificacion):
-    conversion = {
-        'A+': 12, 'A': 11, 'A-': 10,
-        'B+': 9, 'B': 8, 'B-': 7,
-        'C+': 6, 'C': 5, 'C-': 4,
-        'D+': 3, 'D': 2, 'D-': 1,
-        'F': 0
-    }
-
-    if pd.isna(calificacion):
-        return 0
-
-    return conversion.get(str(calificacion).strip(), 0)
-
-
-@st.cache_data(ttl=600)
-def obtener_pandora_buy():
-    try:
-        response = supabase.table("pandora_buy").select("*").order("ticker").execute()
-        if not response.data:
-            return pd.DataFrame()
-
-        df = pd.DataFrame(response.data)
-        return df
-    except Exception as e:
-        st.error(f"Error al obtener datos de Pandora Buy: {str(e)}")
-        return pd.DataFrame()
-
-
-def obtener_datos_ticker(df_pandora, ticker):
-    try:
-        resultado = df_pandora[df_pandora["ticker"] == ticker]
-        if not resultado.empty:
-            return resultado.iloc[0]
+def clamp(x, lo=0, hi=100):
+    if pd.isna(x):
         return None
+    return max(lo, min(hi, float(x)))
+
+
+def parse_numeric(v):
+    if pd.isna(v):
+        return None
+    s = str(v).strip().replace(",", "")
+    if s in {"", "-", "NM", "N/M", "None", "nan"}:
+        return None
+    pct = s.endswith("%")
+    if pct:
+        s = s[:-1]
+    try:
+        val = float(s)
+        return val
     except Exception:
         return None
 
 
-# ==========================================
-# PAGE
-# ==========================================
-st.title("📈 Pandora Buy")
-st.markdown("Análisis fundamental para comparar tickers y revisar métricas por empresa.")
+def parse_date(v):
+    return pd.to_datetime(v, errors="coerce")
 
-df_pandora = obtener_pandora_buy()
 
-if df_pandora.empty:
-    st.warning("⚠️ No hay datos disponibles en Pandora Buy.")
-else:
-    st.markdown("### 🔍 Seleccionar Acciones")
+def score_letter(v):
+    if pd.isna(v):
+        return 55.0
+    s = str(v).strip()
+    return float(LETTER_MAP.get(s, 55.0))
 
-    opciones_tickers = [
-        f"{row['ticker']} - {row['empresa']}"
-        for _, row in df_pandora.iterrows()
-    ]
-    tickers_dict = {
-        f"{row['ticker']} - {row['empresa']}": row["ticker"]
-        for _, row in df_pandora.iterrows()
+
+def score_rating_5(v):
+    x = parse_numeric(v)
+    if x is None:
+        return 50.0
+    return clamp((x - 1.0) / 4.0 * 100.0)
+
+
+def score_higher_better(v, bad, good):
+    x = parse_numeric(v)
+    if x is None:
+        return 50.0
+    if x <= bad:
+        return 0.0
+    if x >= good:
+        return 100.0
+    return clamp((x - bad) / (good - bad) * 100.0)
+
+
+def score_middle_better(v, low_good, high_good, min_bad, max_bad):
+    x = parse_numeric(v)
+    if x is None:
+        return 50.0
+    if low_good <= x <= high_good:
+        return 100.0
+    if x < low_good:
+        if x <= min_bad:
+            return 0.0
+        return clamp((x - min_bad) / (low_good - min_bad) * 100.0)
+    if x >= max_bad:
+        return 0.0
+    return clamp((max_bad - x) / (max_bad - high_good) * 100.0)
+
+
+def score_lower_better(v, best, worst):
+    x = parse_numeric(v)
+    if x is None or x <= 0:
+        return 35.0
+    if x <= best:
+        return 100.0
+    if x >= worst:
+        return 0.0
+    return clamp((worst - x) / (worst - best) * 100.0)
+
+
+def score_market_cap(v):
+    x = parse_numeric(v)
+    if x is None or x <= 0:
+        return 40.0
+    if x >= 200_000_000_000:
+        return 100.0
+    if x >= 50_000_000_000:
+        return 90.0
+    if x >= 10_000_000_000:
+        return 75.0
+    if x >= 2_000_000_000:
+        return 60.0
+    if x >= 300_000_000:
+        return 40.0
+    return 20.0
+
+
+def score_revenue_surprise(v, series):
+    x = parse_numeric(v)
+    if x is None:
+        return 50.0
+    valid = pd.to_numeric(series, errors="coerce").dropna()
+    if valid.empty:
+        return 50.0
+    rank = (valid <= x).mean()
+    return clamp(rank * 100)
+
+
+def score_metric(col, val, df):
+    if col in {"Valuation Grade", "Growth Grade", "Profitability Grade", "Momentum Grade", "EPS Revision Grade", "Div Consistency", "Div Yield", "Div Growth", "Div Safety"}:
+        return score_letter(val)
+    if col in {"Quant Rating", "SA Analyst Ratings", "Wall Street Ratings"}:
+        return score_rating_5(val)
+    if col == "Profit Margin":
+        return score_higher_better(val, -10, 25)
+    if col == "FCF Margin":
+        return score_higher_better(val, -10, 20)
+    if col == "EBITDA Margin":
+        return score_higher_better(val, 0, 35)
+    if col == "Return on Assets":
+        return score_higher_better(val, -5, 15)
+    if col == "Return on Equity":
+        return score_higher_better(val, 0, 30)
+    if col == "Net Income 3Y":
+        return score_higher_better(val, -20, 25)
+    if col == "Revenue 3Y":
+        return score_higher_better(val, -10, 20)
+    if col == "Yield TTM":
+        return score_middle_better(val, 1.5, 5.0, 0.0, 10.0)
+    if col == "Payout Ratio":
+        return score_middle_better(val, 20, 60, 0, 120)
+    if col == "Market Cap":
+        return score_market_cap(val)
+    if col == "P/E FWD":
+        return score_lower_better(val, 10, 40)
+    if col == "Price / Sales":
+        return score_lower_better(val, 1.5, 12)
+    if col == "EV / EBITDA":
+        return score_lower_better(val, 6, 25)
+    if col == "Price / Book":
+        return score_lower_better(val, 1.5, 10)
+    if col == "Altman Z Score":
+        return score_higher_better(val, 1.0, 4.0)
+    if col == "EPS YoY":
+        return score_higher_better(val, -20, 30)
+    if col == "EPS Growth (FWD)":
+        return score_higher_better(val, -10, 25)
+    if col == "Revenue YoY":
+        return score_higher_better(val, -10, 20)
+    if col == "Revenue FWD":
+        return score_higher_better(val, -5, 15)
+    if col == "EPS Surprise":
+        return score_higher_better(val, -0.20, 0.20)
+    if col == "Revenue Surprise":
+        return score_revenue_surprise(val, df[col])
+    return 50.0
+
+
+def grade_from_score(score):
+    for cutoff, grade in GRADE_BANDS:
+        if score >= cutoff:
+            return grade
+    return "D-"
+
+
+def decision_from_grade(grade):
+    if grade.startswith("A"):
+        return "Interday"
+    if grade.startswith("B"):
+        return "Gray Zone"
+    return "Intraday Only"
+
+
+def warning_messages(row):
+    msgs = []
+    upcoming = parse_date(row.get("Upcoming Announce Date"))
+    previous = parse_date(row.get("Last Quarter Announce Date"))
+    if pd.notna(upcoming):
+        days_to = (upcoming.normalize() - TODAY).days
+        if 0 <= days_to <= 10:
+            msgs.append(("warning", f"Upcoming earnings in {days_to} day(s): {upcoming.strftime('%Y-%m-%d')}"))
+        else:
+            msgs.append(("info", f"Next earnings date: {upcoming.strftime('%Y-%m-%d')}"))
+    if pd.notna(previous):
+        days_since = (TODAY - previous.normalize()).days
+        if 0 <= days_since <= 10:
+            msgs.append(("warning", f"Previous earnings were {days_since} day(s) ago: {previous.strftime('%Y-%m-%d')}"))
+        else:
+            msgs.append(("info", f"Previous earnings date: {previous.strftime('%Y-%m-%d')}"))
+    return msgs
+
+
+@st.cache_data(ttl=600)
+def load_data():
+    df = pd.read_csv(CSV_FILE)
+    for col in ["Upcoming Announce Date", "Last Quarter Announce Date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+    return df
+
+
+def build_stock_result(row, df):
+    section_scores = {}
+    section_breakdowns = {}
+    overall = 0.0
+
+    for section, metrics in METRIC_WEIGHTS.items():
+        weighted_points = 0.0
+        breakdown = []
+        for col, weight in metrics.items():
+            raw = row.get(col)
+            metric_score = score_metric(col, raw, df)
+            weighted_points += (metric_score * weight / 100.0)
+            breakdown.append({
+                "metric": col,
+                "raw": raw,
+                "score": round(metric_score, 2),
+                "weight": weight,
+                "contribution": round(metric_score * weight / 100.0, 2),
+            })
+        section_score = round(weighted_points / SECTION_WEIGHTS[section] * 100.0, 2)
+        section_scores[section] = section_score
+        section_breakdowns[section] = breakdown
+        overall += weighted_points
+
+    overall = round(overall, 2)
+    grade = grade_from_score(overall)
+    decision = decision_from_grade(grade)
+    return {
+        "symbol": row["Symbol"],
+        "section_scores": section_scores,
+        "section_breakdowns": section_breakdowns,
+        "overall_score": overall,
+        "grade": grade,
+        "decision": decision,
+        "warnings": warning_messages(row),
     }
 
-    tickers_seleccionados_display = st.multiselect(
-        "Busca por ticker o nombre de empresa",
-        opciones_tickers,
-        default=[],
-        placeholder="Ejemplo: AAPL, MSFT, JPM..."
+
+def make_section_chart(results):
+    categories = list(SECTION_WEIGHTS.keys())
+    fig = go.Figure()
+    for item in results:
+        fig.add_trace(go.Bar(
+            name=item["symbol"],
+            x=categories,
+            y=[item["section_scores"][c] for c in categories],
+            text=[f"{item['section_scores'][c]:.1f}" for c in categories],
+            textposition="auto",
+            hovertemplate="<b>%{x}</b><br>Score: %{y:.2f}<extra></extra>",
+        ))
+    fig.update_layout(
+        title="Section Comparison",
+        barmode="group",
+        yaxis=dict(range=[0, 100], title="Section Score"),
+        xaxis_title="Sections",
+        height=460,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
+    return fig
 
-    tickers_seleccionados = [
-        tickers_dict[t]
-        for t in tickers_seleccionados_display
-    ]
 
-    if not tickers_seleccionados:
-        st.info("👆 Selecciona una o más acciones para comenzar.")
-    else:
-        st.markdown("---")
+def make_single_stock_section_chart(result):
+    sections = list(SECTION_WEIGHTS.keys())
+    fig = go.Figure(go.Bar(
+        x=sections,
+        y=[result["section_scores"][s] for s in sections],
+        text=[f"{result['section_scores'][s]:.1f}" for s in sections],
+        textposition="auto",
+        marker=dict(color=["#0f766e", "#14b8a6", "#0891b2", "#f59e0b"]),
+        customdata=sections,
+        hovertemplate="<b>%{x}</b><br>Section score: %{y:.2f}<extra></extra>",
+    ))
+    fig.update_layout(title=f"Section Scores - {result['symbol']}", yaxis=dict(range=[0, 100]), height=420)
+    return fig
 
-        if len(tickers_seleccionados) > 1:
-            st.markdown(f"### 📊 Comparativa de {len(tickers_seleccionados)} Acciones")
 
-            categorias = ["Calidad", "Salud Financiera", "Earnings", "Revisiones", "Valoración"]
-            fig = go.Figure()
+st.title("📈 Pandora Universe")
+st.markdown("Fundamental scoring framework for classifying stocks as Interday, Gray Zone, or Intraday Only.")
 
-            for ticker in tickers_seleccionados:
-                datos_ticker = obtener_datos_ticker(df_pandora, ticker)
+try:
+    df = load_data()
+except Exception as e:
+    st.error(f"Unable to load {CSV_FILE}: {e}")
+    st.stop()
 
-                if datos_ticker is not None:
-                    valores = [
-                        convertir_calificacion_a_numero(datos_ticker["calidad"]),
-                        convertir_calificacion_a_numero(datos_ticker["salud_financiera"]),
-                        convertir_calificacion_a_numero(datos_ticker["earnings"]),
-                        convertir_calificacion_a_numero(datos_ticker["revisiones"]),
-                        convertir_calificacion_a_numero(datos_ticker["valoracion"])
-                    ]
+if df.empty or "Symbol" not in df.columns:
+    st.warning("No valid Pandora Universe data was found.")
+    st.stop()
 
-                    fig.add_trace(go.Bar(
-                        name=ticker,
-                        x=categorias,
-                        y=valores,
-                        text=[
-                            datos_ticker["calidad"],
-                            datos_ticker["salud_financiera"],
-                            datos_ticker["earnings"],
-                            datos_ticker["revisiones"],
-                            datos_ticker["valoracion"]
-                        ],
-                        textposition="auto"
-                    ))
+options = df["Symbol"].dropna().astype(str).sort_values().unique().tolist()
+selected = st.multiselect(
+    "Select one or more stocks",
+    options,
+    placeholder="Example: AAPL, MSFT, AMZN...",
+)
 
-            fig.update_layout(
-                barmode="group",
-                title="Comparación de Métricas Fundamentales",
-                xaxis_title="Categorías",
-                yaxis_title="Score (0-12)",
-                yaxis=dict(range=[0, 13]),
-                height=500,
-                showlegend=True,
-                legend=dict(
-                    orientation="h",
-                    yanchor="bottom",
-                    y=1.02,
-                    xanchor="right",
-                    x=1
-                )
+if not selected:
+    st.info("Select one or more stocks to start the analysis.")
+    st.stop()
+
+selected_df = df[df["Symbol"].astype(str).isin(selected)].copy()
+results = [build_stock_result(row, df) for _, row in selected_df.iterrows()]
+
+if len(results) > 1:
+    st.plotly_chart(make_section_chart(results), use_container_width=True)
+    comp_df = pd.DataFrame([
+        {
+            "Symbol": r["symbol"],
+            "Overall Score": r["overall_score"],
+            "Grade": r["grade"],
+            "Decision": r["decision"],
+            **r["section_scores"],
+        }
+        for r in results
+    ]).sort_values("Overall Score", ascending=False)
+    st.dataframe(comp_df, use_container_width=True, hide_index=True)
+    st.markdown("---")
+
+for result in results:
+    row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
+    with st.expander(f"{result['symbol']} Analysis", expanded=True):
+        c1, c2, c3 = st.columns([1, 1, 1.2])
+        with c1:
+            st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['overall_score']:.1f}</div><div>Overall Score</div></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['grade']}</div><div>Letter Grade</div></div>", unsafe_allow_html=True)
+        with c3:
+            st.markdown(f"<div class='score-card'><div style='font-size:2.3rem;font-weight:700'>{result['decision']}</div><div>Classification</div></div>", unsafe_allow_html=True)
+
+        for box_type, msg in result["warnings"]:
+            klass = "warning-box" if box_type == "warning" else "info-box"
+            st.markdown(f"<div class='{klass}'>{msg}</div>", unsafe_allow_html=True)
+
+        st.plotly_chart(make_single_stock_section_chart(result), use_container_width=True)
+
+        sec_cols = st.columns(4)
+        for idx, section in enumerate(SECTION_WEIGHTS.keys()):
+            with sec_cols[idx]:
+                st.metric(section, f"{result['section_scores'][section]:.1f}")
+
+        st.markdown("### Section Breakdown")
+        for section in SECTION_WEIGHTS.keys():
+            breakdown_df = pd.DataFrame(result["section_breakdowns"][section])
+            st.markdown(f"#### {section}")
+            st.dataframe(
+                breakdown_df.rename(columns={
+                    "metric": "Metric",
+                    "raw": "Raw Value",
+                    "score": "Metric Score",
+                    "weight": "Weight %",
+                    "contribution": "Contribution",
+                }),
+                use_container_width=True,
+                hide_index=True,
             )
-
-            st.plotly_chart(fig, use_container_width=True)
-            st.markdown("---")
-
-        st.markdown("### 🔍 Detalle por Acción")
-
-        for ticker in tickers_seleccionados:
-            datos = obtener_datos_ticker(df_pandora, ticker)
-
-            if datos is None:
-                st.error(f"❌ No se encontraron datos para {ticker}")
-                continue
-
-            with st.expander(f"📊 {ticker} - {datos['empresa']}", expanded=True):
-                col1, col2 = st.columns([1, 2])
-
-                with col1:
-                    overall_score = datos["overall"]
-                    st.markdown(
-                        f"<h1 style='text-align: center; font-size: 5rem; color: #FF4B4B;'>{overall_score}</h1>",
-                        unsafe_allow_html=True
-                    )
-                    st.markdown(
-                        "<h3 style='text-align: center; color: #666;'>Overall Score</h3>",
-                        unsafe_allow_html=True
-                    )
-
-                    st.markdown("---")
-                    st.markdown(f"**🏢 Empresa:** {datos['empresa']}")
-                    st.markdown(f"**📌 Ticker:** `{datos['ticker']}`")
-
-                with col2:
-                    categorias = ["Calidad", "Salud\nFinanciera", "Earnings", "Revisiones", "Valoración"]
-                    valores = [
-                        convertir_calificacion_a_numero(datos["calidad"]),
-                        convertir_calificacion_a_numero(datos["salud_financiera"]),
-                        convertir_calificacion_a_numero(datos["earnings"]),
-                        convertir_calificacion_a_numero(datos["revisiones"]),
-                        convertir_calificacion_a_numero(datos["valoracion"])
-                    ]
-                    calificaciones = [
-                        datos["calidad"],
-                        datos["salud_financiera"],
-                        datos["earnings"],
-                        datos["revisiones"],
-                        datos["valoracion"]
-                    ]
-
-                    colores = []
-                    for val in valores:
-                        if val >= 10:
-                            colores.append("#00CC66")
-                        elif val >= 7:
-                            colores.append("#FFD700")
-                        elif val >= 4:
-                            colores.append("#FF8C00")
-                        else:
-                            colores.append("#FF4444")
-
-                    fig_individual = go.Figure(data=[
-                        go.Bar(
-                            x=categorias,
-                            y=valores,
-                            text=calificaciones,
-                            textposition="auto",
-                            marker=dict(color=colores),
-                            hovertemplate="<b>%{x}</b><br>Score: %{text}<br>Valor: %{y}<extra></extra>"
-                        )
-                    ])
-
-                    fig_individual.update_layout(
-                        title=f"Métricas Fundamentales - {ticker}",
-                        xaxis_title="Categorías",
-                        yaxis_title="Score (0-12)",
-                        yaxis=dict(range=[0, 13]),
-                        height=400,
-                        showlegend=False
-                    )
-
-                    st.plotly_chart(fig_individual, use_container_width=True)
-
-                st.markdown("---")
-                st.markdown("#### 📋 Resumen de Calificaciones")
-
-                col_tabla1, col_tabla2, col_tabla3 = st.columns(3)
-
-                with col_tabla1:
-                    st.metric("🎯 Calidad", datos["calidad"])
-                    st.metric("💰 Salud Financiera", datos["salud_financiera"])
-
-                with col_tabla2:
-                    st.metric("📈 Earnings", datos["earnings"])
-                    st.metric("📊 Revisiones", datos["revisiones"])
-
-                with col_tabla3:
-                    st.metric("💵 Valoración", datos["valoracion"])
-                    st.metric("⭐ Overall", datos["overall"])
-
-            st.markdown("")
