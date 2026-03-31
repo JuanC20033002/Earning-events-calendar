@@ -212,36 +212,6 @@ def load_economic_event_dates():
 
     return df[["event_name", "date", "source", "updated_at"]]
 
-@st.cache_data(ttl=300)
-def load_economic_event_dates():
-    try:
-        df = pd.read_csv(ECONOMIC_DATES_FILE)
-    except Exception:
-        return pd.DataFrame(columns=["event_name", "date", "source", "updated_at"])
-
-    df = _standardize_columns(df)
-
-    df = df.rename(columns={
-        "evento_nombre": "event_name",
-        "eventonombre": "event_name",
-        "evento": "event_name",
-        "nombre": "event_name",
-        "fecha": "date",
-        "fuente": "source",
-        "updatedat": "updated_at",
-        "updated_at": "updated_at",
-    })
-
-    df = _ensure_columns(df, ["event_name", "date", "source", "updated_at"])
-
-    df = _clean_text_col(df, "event_name")
-    df = _clean_text_col(df, "source")
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
-    df = df.dropna(subset=["event_name", "date"]).copy()
-
-    return df[["event_name", "date", "source", "updated_at"]]
-
 
 def build_economic_events_with_dates():
     events_df = load_economic_events()
