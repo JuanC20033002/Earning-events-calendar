@@ -76,7 +76,21 @@ st.markdown(
     <style>
     .main {padding-top: 0.5rem;}
     h1, h2, h3 {color: #0f766e;}
-    .stMultiSelect [data-baseweb="tag"] {background-color: #ccfbf1;}
+
+    .stMultiSelect [data-baseweb="tag"] {
+        background-color: #ccfbf1 !important;
+    }
+
+    .stMultiSelect [data-baseweb="tag"] span {
+        color: #000000 !important;
+        font-weight: 600;
+    }
+
+    .stMultiSelect [data-baseweb="tag"] svg {
+        fill: #000000 !important;
+        color: #000000 !important;
+    }
+
     .warning-box {
         padding: 0.85rem 1rem; border-radius: 0.75rem; margin-bottom: 0.6rem;
         border-left: 6px solid #f59e0b; background: #fffbeb; color: #92400e;
