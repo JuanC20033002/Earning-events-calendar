@@ -115,7 +115,6 @@ def clamp(x, lo=0, hi=100):
         return None
     return max(lo, min(hi, float(x)))
 
-
 def parse_numeric(v):
     if pd.isna(v):
         return None
@@ -131,24 +130,14 @@ def parse_numeric(v):
     except Exception:
         return None
 
-
 def parse_date(v):
     return pd.to_datetime(v, errors="coerce")
-
 
 def score_letter(v):
     if pd.isna(v):
         return 55.0
     s = str(v).strip()
     return float(LETTER_MAP.get(s, 55.0))
-
-
-def score_rating_5(v):
-    x = parse_numeric(v)
-    if x is None:
-        return 50.0
-    return clamp((x - 1.0) / 4.0 * 100.0)
-
 
 def score_higher_better(v, bad, good):
     x = parse_numeric(v)
@@ -159,7 +148,6 @@ def score_higher_better(v, bad, good):
     if x >= good:
         return 100.0
     return clamp((x - bad) / (good - bad) * 100.0)
-
 
 def score_middle_better(v, low_good, high_good, min_bad, max_bad):
     x = parse_numeric(v)
@@ -175,7 +163,6 @@ def score_middle_better(v, low_good, high_good, min_bad, max_bad):
         return 0.0
     return clamp((max_bad - x) / (max_bad - high_good) * 100.0)
 
-
 def score_lower_better(v, best, worst):
     x = parse_numeric(v)
     if x is None or x <= 0:
@@ -186,91 +173,63 @@ def score_lower_better(v, best, worst):
         return 0.0
     return clamp((worst - x) / (worst - best) * 100.0)
 
-
-def score_market_cap(v):
-    x = parse_numeric(v)
-    if x is None or x <= 0:
-        return 40.0
-    if x >= 200_000_000_000:
-        return 100.0
-    if x >= 50_000_000_000:
-        return 90.0
-    if x >= 10_000_000_000:
-        return 75.0
-    if x >= 2_000_000_000:
-        return 60.0
-    if x >= 300_000_000:
-        return 40.0
-    return 20.0
-
-
-def score_revenue_surprise(v, series):
+def score_lower_better_positive(v, best, worst):
+    """Especial para P/E y EV/EBITDA donde los negativos (<0) representan pérdidas."""
     x = parse_numeric(v)
     if x is None:
-        return 50.0
-    valid = pd.to_numeric(series, errors="coerce").dropna()
-    if valid.empty:
-        return 50.0
-    rank = (valid <= x).mean()
-    return clamp(rank * 100)
+        return 35.0
+    if x < 0:
+        return 0.0  # Penalización automática por pérdidas
+    if x <= best:
+        return 100.0
+    if x >= worst:
+        return 0.0
+    return clamp((worst - x) / (worst - best) * 100.0)
 
 
 def score_metric(col, val, df):
-    if col in {"Valuation Grade", "Growth Grade", "Profitability Grade", "Momentum Grade", "EPS Revision Grade", "Div Consistency", "Div Yield", "Div Growth", "Div Safety"}:
+    # 1. Calificaciones por Letra
+    if col in {"Valuation Grade", "Profitability Grade", "Momentum Grade", "EPS Revision Grade", "Div Consistency", "Div Growth", "Div Safety"}:
         return score_letter(val)
+    
+    # 2. Ratings Numéricos (3.0 es Worst, 4.5 es Best)
     if col in {"Quant Rating", "SA Analyst Ratings", "Wall Street Ratings"}:
-        return score_rating_5(val)
-    if col == "Profit Margin":
-        return score_higher_better(val, -10, 25)
-    if col == "FCF Margin":
-        return score_higher_better(val, -10, 20)
-    if col == "EBITDA Margin":
-        return score_higher_better(val, 0, 35)
-    if col == "Return on Assets":
-        return score_higher_better(val, -5, 15)
-    if col == "Return on Equity":
-        return score_higher_better(val, 0, 30)
-    if col == "Net Income 3Y":
-        return score_higher_better(val, -20, 25)
-    if col == "Revenue 3Y":
-        return score_higher_better(val, -10, 20)
-    if col == "Yield TTM":
-        return score_middle_better(val, 1.5, 5.0, 0.0, 10.0)
-    if col == "Payout Ratio":
-        return score_middle_better(val, 20, 60, 0, 120)
-    if col == "Market Cap":
-        return score_market_cap(val)
-    if col == "P/E FWD":
-        return score_lower_better(val, 10, 40)
-    if col == "Price / Sales":
-        return score_lower_better(val, 1.5, 12)
-    if col == "EV / EBITDA":
-        return score_lower_better(val, 6, 25)
-    if col == "Price / Book":
-        return score_lower_better(val, 1.5, 10)
-    if col == "Altman Z Score":
-        return score_higher_better(val, 1.0, 4.0)
-    if col == "EPS YoY":
-        return score_higher_better(val, -20, 30)
-    if col == "EPS Growth (FWD)":
-        return score_higher_better(val, -10, 25)
-    if col == "Revenue YoY":
-        return score_higher_better(val, -10, 20)
-    if col == "Revenue FWD":
-        return score_higher_better(val, -5, 15)
-    if col == "EPS Surprise":
-        return score_higher_better(val, -0.20, 0.20)
-    if col == "Revenue Surprise":
-        return score_revenue_surprise(val, df[col])
+        return score_higher_better(val, 3.0, 4.5)
+        
+    # 3. Core Fundamentals
+    if col == "Profit Margin": return score_higher_better(val, 0.0, 20.0)
+    if col == "FCF Margin": return score_higher_better(val, 0.0, 20.0)
+    if col == "EBITDA Margin": return score_higher_better(val, 0.0, 30.0)
+    if col == "Return on Assets": return score_higher_better(val, 0.0, 10.0)
+    if col == "Return on Equity": return score_higher_better(val, 0.0, 20.0)
+    if col == "Net Income 3Y": return score_higher_better(val, -10.0, 40.0)
+    if col == "Revenue 3Y": return score_higher_better(val, -5.0, 20.0)
+    if col in {"Div Yield", "Yield TTM"}: return score_middle_better(val, 2.0, 5.0, 0.0, 8.0)
+    if col == "Payout Ratio": return score_middle_better(val, 20.0, 40.0, 0.0, 80.0)
+        
+    # 4. Valuation, Size & Risk
+    if col == "Market Cap": return score_higher_better(val, 2_000_000_000, 10_000_000_000)
+    if col == "P/E FWD": return score_lower_better_positive(val, 10.0, 35.0)
+    if col == "Price / Sales": return score_lower_better(val, 1.0, 8.0)
+    if col == "EV / EBITDA": return score_lower_better_positive(val, 8.0, 25.0)
+    if col == "Price / Book": return score_lower_better(val, 1.0, 5.0)
+    if col == "Altman Z Score": return score_higher_better(val, 1.8, 3.0)
+        
+    # 5. Earnings Signals & Growth
+    if col == "EPS YoY": return score_higher_better(val, 0.0, 25.0)
+    if col == "EPS Growth (FWD)": return score_higher_better(val, 0.0, 20.0)
+    if col == "Revenue YoY": return score_higher_better(val, 0.0, 20.0)
+    if col == "Revenue FWD": return score_higher_better(val, 0.0, 15.0)
+    if col == "EPS Surprise": return score_higher_better(val, 0.0, 10.0)
+    if col == "Revenue Surprise": return score_higher_better(val, 0.0, 5.0)
+    
     return 50.0
-
 
 def grade_from_score(score):
     for cutoff, grade in GRADE_BANDS:
         if score >= cutoff:
             return grade
     return "D-"
-
 
 def decision_from_grade(grade):
     if grade.startswith("A"):
@@ -279,11 +238,9 @@ def decision_from_grade(grade):
         return "Gray Zone"
     return "Intraday Only"
 
-
 def stock_style_from_dividends(row):
     y = parse_numeric(row.get("Yield TTM"))
     return "Value Stock" if y is not None and y > 0 else "Growth Stock"
-
 
 def warning_messages(row):
     msgs = []
@@ -303,7 +260,6 @@ def warning_messages(row):
             msgs.append(("info", f"Previous earnings date: {previous.strftime('%Y-%m-%d')}"))
     return msgs
 
-
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(CSV_FILE)
@@ -311,7 +267,6 @@ def load_data():
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
     return df
-
 
 def build_stock_result(row, df):
     section_scores = {}
@@ -353,7 +308,6 @@ def build_stock_result(row, df):
         "warnings": warning_messages(row),
     }
 
-
 def make_section_chart(results):
     categories = list(SECTION_WEIGHTS.keys())
     fig = go.Figure()
@@ -375,7 +329,6 @@ def make_section_chart(results):
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
     )
     return fig
-
 
 def make_single_stock_section_chart(result):
     sections = list(SECTION_WEIGHTS.keys())
