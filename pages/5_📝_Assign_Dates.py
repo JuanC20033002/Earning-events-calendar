@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime
 import streamlit as st
 
-from data_loader import load_economic_events, load_economic_event_dates, _get_supabase_client
+from data_loader import load_economic_events, _get_supabase_client
 
 st.set_page_config(page_title="Assign Dates", page_icon="🗓️", layout="wide")
 
@@ -34,6 +34,29 @@ def fetch_dates_from_supabase():
     df = df.dropna(subset=["event_name", "date"]).copy()
 
     return df[["event_name", "date", "source", "updated_at"]]
+
+
+def cleanup_expired_dates():
+    client = _get_supabase_client()
+    if client is None:
+        return 0
+
+    try:
+        cutoff_date = (pd.Timestamp.today().normalize() - pd.Timedelta(days=3)).strftime("%Y-%m-%d")
+
+        response = (
+            client.table(SUPABASE_TABLE)
+            .delete()
+            .lte("date", cutoff_date)
+            .execute()
+        )
+
+        if response.data is None:
+            return 0
+
+        return len(response.data)
+    except Exception:
+        return 0
 
 
 def save_economic_event_date(event_name: str, new_date):
@@ -104,7 +127,12 @@ st.title("Assign Dates")
 st.caption("Assign one or more manual dates to economic events.")
 
 economic_df = load_economic_events().copy()
+
+deleted_count = cleanup_expired_dates()
 dates_df = fetch_dates_from_supabase()
+
+if deleted_count > 0:
+    st.info(f"Automatic cleanup removed {deleted_count} expired date(s).")
 
 if economic_df.empty:
     st.warning("No economic events available.")
