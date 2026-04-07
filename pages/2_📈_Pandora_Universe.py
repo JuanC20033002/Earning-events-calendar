@@ -190,7 +190,6 @@ def score_lower_better(v, best, worst):
 
 
 def score_lower_better_positive(v, best, worst):
-    """Especial para P/E y EV/EBITDA donde los negativos (<0) representan pérdidas."""
     x = parse_numeric(v)
     if x is None:
         return 35.0
@@ -364,7 +363,9 @@ def make_single_stock_section_chart(result):
     return fig
 
 
-def build_grade_dialog_df(results):
+def build_full_universe_grade_dialog_df(df):
+    all_results = [build_stock_result(row, df) for _, row in df.iterrows()]
+
     dialog_df = pd.DataFrame([
         {
             "Symbol": r["symbol"],
@@ -372,7 +373,7 @@ def build_grade_dialog_df(results):
             "Letter Grade": r["grade"],
             "Overall Score": r["overall_score"],
         }
-        for r in results
+        for r in all_results
     ])
 
     if dialog_df.empty:
@@ -392,29 +393,31 @@ def build_grade_dialog_df(results):
     return dialog_df
 
 
-@st.dialog("Stock Grade Summary", width="large")
-def show_grade_dialog(dialog_df):
+@st.dialog("Pandora Universe Grade Summary", width="large")
+def show_full_universe_grade_dialog(dialog_df):
     growth_df = dialog_df[dialog_df["Stock Style"] == "Growth Stock"].copy()
     value_df = dialog_df[dialog_df["Stock Style"] == "Value Stock"].copy()
 
     st.markdown("### Growth Stocks")
     if growth_df.empty:
-        st.info("No growth stocks in the current selection.")
+        st.info("No growth stocks found.")
     else:
         st.dataframe(
             growth_df[["Symbol", "Letter Grade", "Overall Score"]],
             use_container_width=True,
             hide_index=True,
+            height=400,
         )
 
     st.markdown("### Value Stocks")
     if value_df.empty:
-        st.info("No value stocks in the current selection.")
+        st.info("No value stocks found.")
     else:
         st.dataframe(
             value_df[["Symbol", "Letter Grade", "Overall Score"]],
             use_container_width=True,
             hide_index=True,
+            height=400,
         )
 
 
@@ -434,6 +437,12 @@ if df.empty or "Symbol" not in df.columns:
     st.stop()
 
 
+full_universe_dialog_df = build_full_universe_grade_dialog_df(df)
+
+if st.button("View Full Universe Letter Grades"):
+    show_full_universe_grade_dialog(full_universe_dialog_df)
+
+
 options = df["Symbol"].dropna().astype(str).sort_values().unique().tolist()
 selected = st.multiselect(
     "Select one or more stocks",
@@ -449,10 +458,6 @@ if not selected:
 
 selected_df = df[df["Symbol"].astype(str).isin(selected)].copy()
 results = [build_stock_result(row, df) for _, row in selected_df.iterrows()]
-dialog_df = build_grade_dialog_df(results)
-
-if st.button("View Grade Summary", use_container_width=False):
-    show_grade_dialog(dialog_df)
 
 
 if len(results) > 1:
