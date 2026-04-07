@@ -32,9 +32,9 @@ external_news_page = st.Page(
 )
 
 assign_dates_page = st.Page(
-    "pages/5_📌_Assign_Dates.py",
+    "pages/5_📝_Assign_Dates.py",
     title="Assign Dates",
-    icon="📌",
+    icon="📝",
 )
 
 pg = st.navigation(
