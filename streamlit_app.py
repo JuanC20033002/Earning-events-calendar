@@ -1,7 +1,5 @@
 import streamlit as st
 
-
-
 st.set_page_config(
     page_title="Economic Events Calendar",
     page_icon="📅",
@@ -9,11 +7,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-
-
 pages = []
-
-
 
 try:
     pages.append(st.Page("pages/1_🚦_Traffic_Light.py", title="Traffic Light", icon="🚦", default=True))
@@ -27,8 +21,6 @@ except Exception as e:
     st.code(str(e))
     st.info("Check that the filenames inside pages/ exactly match the paths used in st.Page(...).")
     st.stop()
-
-
 
 pg = st.navigation(pages, position="sidebar")
 pg.run()
