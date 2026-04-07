@@ -368,7 +368,7 @@ def load_external_news():
         ])
 
     try:
-        response = client.table("noticias_externas").select("*").order("fecha").execute()
+        response = client.table("noticias_externas").select("*").order("fecha", desc=False).execute()
         df = pd.DataFrame(response.data or [])
     except Exception:
         return pd.DataFrame(columns=[
@@ -411,11 +411,18 @@ def load_external_news():
     df["type"] = "external_news"
     df["source_group"] = "external_news"
 
-    return df[[
+    df = df[[
         "event_name", "category", "date", "description",
         "ticker", "country", "type", "source_group",
         "sectors", "impact_score"
-    ]].drop_duplicates()
+    ]].copy()
+
+    df = df.drop_duplicates(subset=[
+        "event_name", "category", "date", "description",
+        "ticker", "country", "type", "source_group", "impact_score"
+    ])
+
+    return df
 
 @st.cache_data(ttl=300)
 def build_master_events_df():
