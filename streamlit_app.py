@@ -19,8 +19,8 @@ try:
     pages.append(st.Page("pages/1_🚦_Traffic_Light.py", title="Traffic Light", icon="🚦", default=True))
     pages.append(st.Page("pages/2_📈_Pandora_Universe.py", title="Pandora Universe", icon="📈"))
     pages.append(st.Page("pages/3_🗓️_Calendar.py", title="Calendar", icon="🗓️"))
-    pages.append(st.Page("pages/4_🌐_Admin_Add_External_News.py", title="ADMIN Add External News", icon="🌐"))
-    pages.append(st.Page("pages/5_📝_Admin_Assign_Dates.py", title="ADMIN Assign Dates", icon="📝"))
+    pages.append(st.Page("pages/4_🌐_Admin_Add_External_News.py", title="Admin Add External News", icon="🌐"))
+    pages.append(st.Page("pages/5_📝_Admin_Assign_Dates.py", title="Admin Assign Dates", icon="📝"))
 except Exception as e:
     st.title("Economic Events Calendar")
     st.error("A page path is invalid in streamlit_app.py.")
