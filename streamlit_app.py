@@ -26,7 +26,7 @@ calendar_page = st.Page(
 )
 
 external_news_page = st.Page(
-    "pages/4_🌐_External_News.py",
+    "pages/4_🌐_Add_External_News.py",
     title="Add External News",
     icon="🌐",
 )
@@ -50,7 +50,6 @@ pg = st.navigation(
         ],
     },
     position="sidebar",
-    expanded=True,
 )
 
 pg.run()
