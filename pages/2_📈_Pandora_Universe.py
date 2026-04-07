@@ -3,8 +3,10 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
+
 CSV_FILE = "Pandora_Universe.csv"
 TODAY = pd.Timestamp.today().normalize()
+
 
 SECTION_WEIGHTS = {
     "Core Fundamentals": 30.0,
@@ -12,6 +14,7 @@ SECTION_WEIGHTS = {
     "Valuation & Size & Risk": 20.0,
     "Earnings Signals": 20.0,
 }
+
 
 METRIC_WEIGHTS = {
     "Core Fundamentals": {
@@ -56,6 +59,7 @@ METRIC_WEIGHTS = {
     },
 }
 
+
 LETTER_MAP = {
     "A+": 100, "A": 95, "A-": 90,
     "B+": 85, "B": 80, "B-": 75,
@@ -64,12 +68,17 @@ LETTER_MAP = {
     "F": 35,
 }
 
+
 GRADE_BANDS = [
     (95, "A+"), (90, "A"), (85, "A-"), (80, "B+"), (75, "B"), (70, "B-"),
     (65, "C+"), (60, "C"), (55, "C-"), (50, "D+"), (45, "D"), (0, "D-")
 ]
 
+GRADE_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-"]
+
+
 st.set_page_config(page_title="Pandora Universe", page_icon="📈", layout="wide")
+
 
 st.markdown(
     """
@@ -115,6 +124,7 @@ def clamp(x, lo=0, hi=100):
         return None
     return max(lo, min(hi, float(x)))
 
+
 def parse_numeric(v):
     if pd.isna(v):
         return None
@@ -130,14 +140,17 @@ def parse_numeric(v):
     except Exception:
         return None
 
+
 def parse_date(v):
     return pd.to_datetime(v, errors="coerce")
+
 
 def score_letter(v):
     if pd.isna(v):
         return 55.0
     s = str(v).strip()
     return float(LETTER_MAP.get(s, 55.0))
+
 
 def score_higher_better(v, bad, good):
     x = parse_numeric(v)
@@ -148,6 +161,7 @@ def score_higher_better(v, bad, good):
     if x >= good:
         return 100.0
     return clamp((x - bad) / (good - bad) * 100.0)
+
 
 def score_middle_better(v, low_good, high_good, min_bad, max_bad):
     x = parse_numeric(v)
@@ -163,6 +177,7 @@ def score_middle_better(v, low_good, high_good, min_bad, max_bad):
         return 0.0
     return clamp((max_bad - x) / (max_bad - high_good) * 100.0)
 
+
 def score_lower_better(v, best, worst):
     x = parse_numeric(v)
     if x is None or x <= 0:
@@ -173,13 +188,13 @@ def score_lower_better(v, best, worst):
         return 0.0
     return clamp((worst - x) / (worst - best) * 100.0)
 
+
 def score_lower_better_positive(v, best, worst):
-    """Especial para P/E y EV/EBITDA donde los negativos (<0) representan pérdidas."""
     x = parse_numeric(v)
     if x is None:
         return 35.0
     if x < 0:
-        return 0.0  # Penalización automática por pérdidas
+        return 0.0
     if x <= best:
         return 100.0
     if x >= worst:
@@ -188,15 +203,12 @@ def score_lower_better_positive(v, best, worst):
 
 
 def score_metric(col, val, df):
-    # 1. Calificaciones por Letra
     if col in {"Valuation Grade", "Profitability Grade", "Momentum Grade", "EPS Revision Grade", "Div Consistency", "Div Growth", "Div Safety"}:
         return score_letter(val)
-    
-    # 2. Ratings Numéricos (3.0 es Worst, 4.5 es Best)
+
     if col in {"Quant Rating", "SA Analyst Ratings", "Wall Street Ratings"}:
         return score_higher_better(val, 3.0, 4.5)
-        
-    # 3. Core Fundamentals
+
     if col == "Profit Margin": return score_higher_better(val, 0.0, 20.0)
     if col == "FCF Margin": return score_higher_better(val, 0.0, 20.0)
     if col == "EBITDA Margin": return score_higher_better(val, 0.0, 30.0)
@@ -206,30 +218,30 @@ def score_metric(col, val, df):
     if col == "Revenue 3Y": return score_higher_better(val, -5.0, 20.0)
     if col in {"Div Yield", "Yield TTM"}: return score_middle_better(val, 2.0, 5.0, 0.0, 8.0)
     if col == "Payout Ratio": return score_middle_better(val, 20.0, 40.0, 0.0, 80.0)
-        
-    # 4. Valuation, Size & Risk
+
     if col == "Market Cap": return score_higher_better(val, 2_000_000_000, 10_000_000_000)
     if col == "P/E FWD": return score_lower_better_positive(val, 10.0, 35.0)
     if col == "Price / Sales": return score_lower_better(val, 1.0, 8.0)
     if col == "EV / EBITDA": return score_lower_better_positive(val, 8.0, 25.0)
     if col == "Price / Book": return score_lower_better(val, 1.0, 5.0)
     if col == "Altman Z Score": return score_higher_better(val, 1.8, 3.0)
-        
-    # 5. Earnings Signals & Growth
+
     if col == "EPS YoY": return score_higher_better(val, 0.0, 25.0)
     if col == "EPS Growth (FWD)": return score_higher_better(val, 0.0, 20.0)
     if col == "Revenue YoY": return score_higher_better(val, 0.0, 20.0)
     if col == "Revenue FWD": return score_higher_better(val, 0.0, 15.0)
     if col == "EPS Surprise": return score_higher_better(val, 0.0, 10.0)
     if col == "Revenue Surprise": return score_higher_better(val, 0.0, 5.0)
-    
+
     return 50.0
+
 
 def grade_from_score(score):
     for cutoff, grade in GRADE_BANDS:
         if score >= cutoff:
             return grade
     return "D-"
+
 
 def decision_from_grade(grade):
     if grade.startswith("A"):
@@ -238,9 +250,11 @@ def decision_from_grade(grade):
         return "Gray Zone"
     return "Intraday Only"
 
+
 def stock_style_from_dividends(row):
     y = parse_numeric(row.get("Yield TTM"))
     return "Value Stock" if y is not None and y > 0 else "Growth Stock"
+
 
 def warning_messages(row):
     msgs = []
@@ -260,6 +274,7 @@ def warning_messages(row):
             msgs.append(("info", f"Previous earnings date: {previous.strftime('%Y-%m-%d')}"))
     return msgs
 
+
 @st.cache_data(ttl=600)
 def load_data():
     df = pd.read_csv(CSV_FILE)
@@ -267,6 +282,7 @@ def load_data():
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
     return df
+
 
 def build_stock_result(row, df):
     section_scores = {}
@@ -308,6 +324,7 @@ def build_stock_result(row, df):
         "warnings": warning_messages(row),
     }
 
+
 def make_section_chart(results):
     categories = list(SECTION_WEIGHTS.keys())
     fig = go.Figure()
@@ -330,6 +347,7 @@ def make_section_chart(results):
     )
     return fig
 
+
 def make_single_stock_section_chart(result):
     sections = list(SECTION_WEIGHTS.keys())
     fig = go.Figure(go.Bar(
@@ -345,8 +363,73 @@ def make_single_stock_section_chart(result):
     return fig
 
 
+def build_grade_summary(results):
+    summary_df = pd.DataFrame([
+        {
+            "Symbol": r["symbol"],
+            "Stock Style": r["stock_style"],
+            "Grade": r["grade"],
+            "Decision": r["decision"],
+            "Overall Score": r["overall_score"],
+        }
+        for r in results
+    ])
+
+    if summary_df.empty:
+        return summary_df
+
+    summary_df["Grade"] = pd.Categorical(
+        summary_df["Grade"],
+        categories=GRADE_ORDER,
+        ordered=True
+    )
+
+    summary_df = summary_df.sort_values(
+        ["Stock Style", "Grade", "Overall Score", "Symbol"],
+        ascending=[True, True, False, True]
+    ).reset_index(drop=True)
+
+    return summary_df
+
+
+def render_style_grade_view(summary_df):
+    st.markdown("---")
+    st.markdown("## Grade Buckets by Stock Style")
+    st.caption("Quick view of which stocks fall into each grade bucket, separated into Growth and Value.")
+
+    if summary_df.empty:
+        st.info("No stocks available for style and grade view.")
+        return
+
+    growth_tab, value_tab = st.tabs(["Growth Stocks", "Value Stocks"])
+
+    for tab, style_name in [(growth_tab, "Growth Stock"), (value_tab, "Value Stock")]:
+        with tab:
+            style_df = summary_df[summary_df["Stock Style"] == style_name].copy()
+
+            if style_df.empty:
+                st.info(f"No {style_name.lower()}s in the current selection.")
+                continue
+
+            for grade in GRADE_ORDER:
+                bucket_df = style_df[style_df["Grade"] == grade].copy()
+
+                if bucket_df.empty:
+                    continue
+
+                st.markdown(f"### {grade}")
+                st.dataframe(
+                    bucket_df[["Symbol", "Overall Score", "Decision"]].sort_values(
+                        ["Overall Score", "Symbol"], ascending=[False, True]
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+
 st.title("📈 Pandora Universe")
 st.markdown("Fundamental scoring framework for classifying stocks as Interday, Gray Zone, or Intraday Only.")
+
 
 try:
     df = load_data()
@@ -354,9 +437,11 @@ except Exception as e:
     st.error(f"Unable to load {CSV_FILE}: {e}")
     st.stop()
 
+
 if df.empty or "Symbol" not in df.columns:
     st.warning("No valid Pandora Universe data was found.")
     st.stop()
+
 
 options = df["Symbol"].dropna().astype(str).sort_values().unique().tolist()
 selected = st.multiselect(
@@ -365,12 +450,16 @@ selected = st.multiselect(
     placeholder="Example: AAPL, MSFT, AMZN...",
 )
 
+
 if not selected:
     st.info("Select one or more stocks to start the analysis.")
     st.stop()
 
+
 selected_df = df[df["Symbol"].astype(str).isin(selected)].copy()
 results = [build_stock_result(row, df) for _, row in selected_df.iterrows()]
+summary_df = build_grade_summary(results)
+
 
 if len(results) > 1:
     st.plotly_chart(make_section_chart(results), use_container_width=True)
@@ -387,6 +476,10 @@ if len(results) > 1:
     ]).sort_values("Overall Score", ascending=False)
     st.dataframe(comp_df, use_container_width=True, hide_index=True)
     st.markdown("---")
+
+
+render_style_grade_view(summary_df)
+
 
 for result in results:
     row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
