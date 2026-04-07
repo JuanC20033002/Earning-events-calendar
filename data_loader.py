@@ -54,7 +54,8 @@ def _get_sector_columns(df: pd.DataFrame):
     excluded = {
         "fecha", "date", "tipo_evento", "tipoevento", "event_name", "evento_nombre",
         "eventonombre", "symbol", "ticker", "category", "description", "country",
-        "type", "source_group", "source", "updated_at", "updatedat", "id"
+        "type", "source_group", "source", "updated_at", "updatedat", "id",
+        "titulo", "descripcion", "sectores", "impacto"
     }
     return [c for c in df.columns if c not in excluded]
 
@@ -156,8 +157,9 @@ def load_impact_data():
     except Exception:
         pass
 
-    # Optional Supabase overrides / additions for impacts
     client = _get_supabase_client()
+
+    # Optional Supabase overrides / additions for impacts
     if client is not None:
         try:
             response = client.table("impactosectores").select("*").execute()
@@ -176,6 +178,57 @@ def load_impact_data():
                 db_df = db_df.dropna(subset=["event_name", "sector", "impact_score"])
                 db_df = db_df[db_df["impact_score"] > 0]
                 frames.append(db_df[["event_name", "sector", "impact_score"]])
+        except Exception:
+            pass
+
+    # External news impacts from Supabase
+    if client is not None:
+        try:
+            response_news = client.table("noticias_externas").select("*").execute()
+            news_df = pd.DataFrame(response_news.data or [])
+
+            if not news_df.empty:
+                news_df = _standardize_columns(news_df)
+                news_df = news_df.rename(columns={
+                    "titulo": "event_name",
+                    "sectores": "sectors",
+                    "impacto": "impact_score",
+                })
+
+                news_df = _ensure_columns(news_df, ["event_name", "sectors", "impact_score"])
+                news_df = _clean_text_col(news_df, "event_name")
+                news_df["impact_score"] = pd.to_numeric(news_df["impact_score"], errors="coerce")
+                news_df = news_df.dropna(subset=["event_name", "impact_score"]).copy()
+                news_df = news_df[news_df["impact_score"] > 0]
+
+                records = []
+                for _, row in news_df.iterrows():
+                    event_name = normalize_text(row["event_name"])
+                    impact_score = row["impact_score"]
+                    sectors_value = row["sectors"]
+
+                    if isinstance(sectors_value, list):
+                        sectors_list = sectors_value
+                    elif isinstance(sectors_value, str):
+                        sectors_list = [s.strip() for s in sectors_value.split(",") if s.strip()]
+                    else:
+                        sectors_list = []
+
+                    for sector in sectors_list:
+                        sector_norm = normalize_text(sector)
+                        if sector_norm:
+                            records.append({
+                                "event_name": event_name,
+                                "sector": sector_norm,
+                                "impact_score": impact_score,
+                            })
+
+                if records:
+                    news_long = pd.DataFrame.from_records(records)
+                    news_long = news_long.dropna(subset=["event_name", "sector", "impact_score"]).copy()
+                    news_long["impact_score"] = pd.to_numeric(news_long["impact_score"], errors="coerce")
+                    news_long = news_long[news_long["impact_score"] > 0]
+                    frames.append(news_long[["event_name", "sector", "impact_score"]])
         except Exception:
             pass
 
@@ -423,6 +476,7 @@ def load_external_news():
     ])
 
     return df
+
 
 @st.cache_data(ttl=300)
 def build_master_events_df():

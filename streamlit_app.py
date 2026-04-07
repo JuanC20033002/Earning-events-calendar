@@ -13,7 +13,7 @@ try:
     pages.append(st.Page("pages/1_🚦_Traffic_Light.py", title="Traffic Light", icon="🚦", default=True))
     pages.append(st.Page("pages/2_📈_Pandora_Universe.py", title="Pandora Universe", icon="📈"))
     pages.append(st.Page("pages/3_🗓️_Calendar.py", title="Calendar", icon="🗓️"))
-    pages.append(st.Page("pages/4_🌐_External_News.py", title="External News", icon="🌐"))
+    pages.append(st.Page("pages/4_🌐_Add_External_News.py", title="Add External News", icon="🌐"))
     pages.append(st.Page("pages/5_📝_Assign_Dates.py", title="Assign Dates", icon="📝"))
 except Exception as e:
     st.title("Economic Events Calendar")
