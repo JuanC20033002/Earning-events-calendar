@@ -363,61 +363,59 @@ def load_external_news():
     if client is None:
         return pd.DataFrame(columns=[
             "event_name", "category", "date", "description",
-            "ticker", "country", "type", "source_group"
+            "ticker", "country", "type", "source_group",
+            "sectors", "impact_score"
         ])
 
     try:
-        response = client.table("eventosunicos").select("*").eq("categoria", "Noticia Externa").execute()
+        response = client.table("noticias_externas").select("*").order("fecha").execute()
         df = pd.DataFrame(response.data or [])
     except Exception:
         return pd.DataFrame(columns=[
             "event_name", "category", "date", "description",
-            "ticker", "country", "type", "source_group"
+            "ticker", "country", "type", "source_group",
+            "sectors", "impact_score"
         ])
 
     if df.empty:
         return pd.DataFrame(columns=[
             "event_name", "category", "date", "description",
-            "ticker", "country", "type", "source_group"
+            "ticker", "country", "type", "source_group",
+            "sectors", "impact_score"
         ])
 
     df = _standardize_columns(df)
 
     df = df.rename(columns={
-        "eventonombre": "event_name",
-        "evento_nombre": "event_name",
+        "titulo": "event_name",
         "fecha": "date",
-        "descripción": "description",
         "descripcion": "description",
-        "pais": "country",
-        "país": "country",
-        "tipo": "type",
-        "categoria": "category",
+        "sectores": "sectors",
+        "impacto": "impact_score",
     })
 
     df = _ensure_columns(df, [
-        "event_name", "category", "date", "description",
-        "ticker", "country", "type"
+        "event_name", "date", "description", "sectors", "impact_score"
     ])
 
     df = _clean_text_col(df, "event_name")
-    df = _clean_text_col(df, "category")
     df = _clean_text_col(df, "description")
-    df = _clean_text_col(df, "ticker")
-    df = _clean_text_col(df, "country")
-    df = _clean_text_col(df, "type")
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["impact_score"] = pd.to_numeric(df["impact_score"], errors="coerce")
 
     df = df.dropna(subset=["event_name"]).copy()
-    df["category"] = df["category"].fillna("External News").apply(normalize_category)
-    df["type"] = df["type"].fillna("external_news")
+
+    df["category"] = "External News"
+    df["ticker"] = None
+    df["country"] = None
+    df["type"] = "external_news"
     df["source_group"] = "external_news"
 
     return df[[
         "event_name", "category", "date", "description",
-        "ticker", "country", "type", "source_group"
-    ]]
-
+        "ticker", "country", "type", "source_group",
+        "sectors", "impact_score"
+    ]].drop_duplicates()
 
 @st.cache_data(ttl=300)
 def build_master_events_df():
