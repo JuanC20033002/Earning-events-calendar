@@ -381,6 +381,60 @@ def build_full_universe_dialog_df(df):
     )
     return dialog_df
 
+@st.dialog("Analyst Rating × Letter Grade Matrix", width="large")
+def show_analyst_matrix_dialog(dialog_df):
+    """
+    Para cada analista muestra una tabla:
+    Filas = Rating del analista (Strong Buy → Strong Sell)
+    Columnas = Letter Grade (A+ → D-)
+    Celdas = número de acciones
+    """
+    RATING_ROWS = ["Strong Buy", "Buy", "Neutral", "Sell", "Strong Sell", "N/A"]
+
+    analyst_cols = {
+        "SA Analyst":   "SA Analyst",
+        "Wall Street":  "Wall Street",
+        "Quant":        "Quant",
+    }
+
+    for analyst_name, col in analyst_cols.items():
+        st.markdown(f"### {analyst_name}")
+
+        # Construir la matriz
+        matrix_data = {}
+        for rating in RATING_ROWS:
+            row_stocks = dialog_df[dialog_df[col] == rating]
+            counts = row_stocks["Letter Grade"].value_counts()
+            matrix_data[rating] = {grade: int(counts.get(grade, 0)) for grade in GRADE_ORDER}
+
+        matrix_df = pd.DataFrame(matrix_data, index=GRADE_ORDER).T
+        matrix_df.index.name = f"{analyst_name} Rating ↓  /  Letter Grade →"
+
+        # Total por fila
+        matrix_df["TOTAL"] = matrix_df.sum(axis=1)
+
+        # Quitar filas vacías (rating sin ninguna acción)
+        matrix_df = matrix_df[matrix_df["TOTAL"] > 0]
+
+        if matrix_df.empty:
+            st.info(f"No data available for {analyst_name}.")
+            continue
+
+        # Resaltar celdas con valor > 0 usando color de fondo suave
+        def highlight_cells(val):
+            if isinstance(val, int) and val > 0:
+                return "background-color: #ccfbf1; font-weight: 600; color: #0f766e;"
+            return "color: #cbd5e1;"
+
+        styled = (
+            matrix_df.style
+            .applymap(highlight_cells)
+            .format(lambda x: str(x) if isinstance(x, int) else x)
+        )
+
+        st.dataframe(styled, use_container_width=True)
+        st.markdown("---")
+        
 @st.dialog("SP500 Test Universe – Grade Summary", width="large")
 def show_full_universe_dialog(dialog_df):
     # ── Sort selector ──────────────────────────────────────────────────────
@@ -462,6 +516,10 @@ full_dialog_df = build_full_universe_dialog_df(df)
 if st.button("📊 View Full Universe Letter Grades"):
     show_full_universe_dialog(full_dialog_df)
 
+# ── NUEVO BOTÓN ────────────────────────────────────────────────────────────
+if st.button("🔬 Analyst Rating × Grade Matrix"):
+    show_analyst_matrix_dialog(full_dialog_df)
+    
 # ── Stock selector ─────────────────────────────────────────────────────────
 options = df["Symbol"].dropna().astype(str).sort_values().unique().tolist()
 selected = st.multiselect(
