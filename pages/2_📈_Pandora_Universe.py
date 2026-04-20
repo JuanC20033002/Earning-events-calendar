@@ -518,36 +518,76 @@ def show_analyst_matrix_dialog_pandora(matrix_df: pd.DataFrame):
     }
 
     for analyst_name, col in analyst_cols.items():
-        st.markdown(f"### {analyst_name}")
+    st.markdown(f"### {analyst_name}")
 
-        matrix_data = {}
-        for rating in RATING_ROWS:
-            row_stocks = matrix_df[matrix_df[col] == rating]
-            counts = row_stocks["Letter Grade"].value_counts()
-            matrix_data[rating] = {grade: int(counts.get(grade, 0)) for grade in GRADE_ORDER}
+    matrix_data = {}
+    for rating in RATING_ROWS:
+        row_stocks = matrix_df[matrix_df[col] == rating]
+        counts = row_stocks["Letter Grade"].value_counts()
+        matrix_data[rating] = {grade: int(counts.get(grade, 0)) for grade in GRADE_ORDER}
 
-        matrix_df_display = pd.DataFrame(matrix_data, index=GRADE_ORDER).T
-        matrix_df_display.index.name = f"{analyst_name} Rating ↓  /  Letter Grade →"
-        matrix_df_display["TOTAL"] = matrix_df_display.sum(axis=1)
-        matrix_df_display = matrix_df_display[matrix_df_display["TOTAL"] > 0]
+    matrix_df_display = pd.DataFrame(matrix_data, index=GRADE_ORDER).T
+    matrix_df_display.index.name = f"{analyst_name} Rating ↓  /  Letter Grade →"
+    matrix_df_display["TOTAL"] = matrix_df_display.sum(axis=1)
+    matrix_df_display = matrix_df_display[matrix_df_display["TOTAL"] > 0]
 
-        if matrix_df_display.empty:
-            st.info(f"No data available for {analyst_name}.")
-            continue
+    if matrix_df_display.empty:
+        st.info(f"No data available for {analyst_name}.")
+        continue
 
-        def highlight_cells(val):
-            if isinstance(val, int) and val > 0:
-                return "background-color: #ccfbf1; font-weight: 600; color: #0f766e;"
-            return "color: #cbd5e1;"
+    def highlight_cells(val):
+        if isinstance(val, int) and val > 0:
+            return "background-color: #ccfbf1; font-weight: 600; color: #0f766e;"
+        return "color: #cbd5e1;"
 
-        styled = (
-            matrix_df_display.style
-            .map(highlight_cells)
-            .format(lambda x: str(x) if isinstance(x, int) else x)
-        )
+    styled = (
+        matrix_df_display.style
+        .map(highlight_cells)
+        .format(lambda x: str(x) if isinstance(x, int) else x)
+    )
 
-        st.dataframe(styled, use_container_width=True)
-        st.markdown("---")
+    st.dataframe(styled, use_container_width=True)
+
+    # ── Drill-down: selecciona celda para ver los símbolos ─────────────
+    with st.expander(f"🔍 See symbols for a specific cell — {analyst_name}"):
+        dd_col1, dd_col2 = st.columns(2)
+        with dd_col1:
+            selected_rating = st.selectbox(
+                "Analyst Rating",
+                [r for r in RATING_ROWS if r in matrix_df_display.index],
+                key=f"rating_{analyst_name}",
+            )
+        with dd_col2:
+            selected_grade = st.selectbox(
+                "Letter Grade",
+                GRADE_ORDER,
+                key=f"grade_{analyst_name}",
+            )
+
+        # Filtrar acciones que coincidan con esa combinación exacta
+        matches = matrix_df[
+            (matrix_df[col] == selected_rating) &
+            (matrix_df["Letter Grade"] == selected_grade)
+        ]["Symbol"].sort_values().tolist()
+
+        if matches:
+            count = len(matches)
+            st.markdown(
+                f"**{count} stock{'s' if count > 1 else ''} with "
+                f"{analyst_name} = {selected_rating} and Grade = {selected_grade}:**"
+            )
+            # Mostrar como chips en grid
+            chips_html = " ".join(
+                f"<span style='display:inline-block; background:#ccfbf1; color:#0f766e; "
+                f"font-weight:700; padding:3px 10px; border-radius:999px; "
+                f"margin:3px; font-size:0.9rem;'>{sym}</span>"
+                for sym in matches
+            )
+            st.markdown(chips_html, unsafe_allow_html=True)
+        else:
+            st.info(f"No stocks found with {analyst_name} = {selected_rating} and Grade = {selected_grade}.")
+
+    st.markdown("---")
 
 
 st.title("📈 Pandora Universe")
