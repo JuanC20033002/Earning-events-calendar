@@ -253,16 +253,15 @@ def decision_from_grade(grade):
 def analyst_consensus_score(row) -> float | None:
     """
     Calcula un consensus score ponderado (1–5) con:
-      SA Analyst   35%
-      Wall Street  35%
-      Quant        30%
-    Si falta algún analista, redistribuye el peso entre los disponibles.
+      SA Analyst   50%
+      Wall Street  50%
+      Quant        ignorado
+    Si falta alguno, el otro toma el 100%.
     Retorna None si no hay ningún dato.
     """
     sources = [
-        (row.get("SA Analyst Ratings"),  0.35),
-        (row.get("Wall Street Ratings"), 0.35),
-        (row.get("Quant Rating"),        0.30),
+        (row.get("SA Analyst Ratings"),  0.50),
+        (row.get("Wall Street Ratings"), 0.50),
     ]
     total_weight = 0.0
     weighted_sum = 0.0
@@ -274,7 +273,7 @@ def analyst_consensus_score(row) -> float | None:
 
     if total_weight == 0:
         return None
-    return weighted_sum / total_weight   # normalizado al peso real disponible
+    return weighted_sum / total_weight
 
 
 def consensus_card_style(consensus: float | None) -> tuple[str, str]:
