@@ -1,11 +1,13 @@
 import streamlit as st
 
+
 st.set_page_config(
     page_title="Economic Events Calendar",
     page_icon="📅",
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
 
 st.markdown(
     """
@@ -17,6 +19,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 
 try:
     traffic_light_page = st.Page(
@@ -45,12 +48,18 @@ try:
         title="Assign Dates",
         icon="📝"
     )
+    admin_test_page = st.Page(
+        "pages/6_🧪_Admin_Test.py",
+        title="Admin Test",
+        icon="🧪"
+    )
 except Exception as e:
     st.title("Economic Events Calendar")
     st.error("A page path is invalid in streamlit_app.py.")
     st.code(str(e))
     st.info("Check that the filenames inside pages/ exactly match the paths used in st.Page(...).")
     st.stop()
+
 
 pg = st.navigation(
     {
@@ -62,10 +71,12 @@ pg = st.navigation(
         "Admin": [
             external_news_page,
             assign_dates_page,
+            admin_test_page,
         ],
     },
     position="sidebar",
     expanded=True,
 )
+
 
 pg.run()
