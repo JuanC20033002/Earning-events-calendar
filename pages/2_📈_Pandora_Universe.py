@@ -276,21 +276,54 @@ def analyst_consensus_score(row) -> float | None:
     return weighted_sum / total_weight
 
 
-def consensus_card_style(consensus: float | None) -> tuple[str, str]:
+def consensus_card_style(consensus: float | None, decision: str) -> tuple[str, str]:
     """
-    Retorna (background_css, label) según el consensus score.
+    Para Interday y Gray Zone: colores normales por label.
+    Para Intraday Only: escala rojo→verde donde Hold (2.5) = rojo y Strong Buy (5.0) = verde.
     """
     if consensus is None:
         return "linear-gradient(135deg, #64748b, #94a3b8)", "No Analyst Data"
+
+    # Label siempre basado en el score real
     if consensus >= 4.5:
-        return "linear-gradient(135deg, #15803d, #22c55e)", "Strong Buy"
-    if consensus >= 3.75:
-        return "linear-gradient(135deg, #16a34a, #4ade80)", "Buy"
-    if consensus >= 2.75:
-        return "linear-gradient(135deg, #ca8a04, #facc15)", "Neutral"
-    if consensus >= 1.75:
-        return "linear-gradient(135deg, #ea580c, #fb923c)", "Sell"
-    return "linear-gradient(135deg, #dc2626, #f87171)", "Strong Sell"
+        label = "Strong Buy"
+    elif consensus >= 3.5:
+        label = "Buy"
+    elif consensus >= 2.5:
+        label = "Neutral"
+    elif consensus >= 1.5:
+        label = "Sell"
+    else:
+        label = "Strong Sell"
+
+    # ── Intraday Only: semáforo rojo→verde dentro del rango 2.5–5.0 ──────
+    if decision == "Intraday Only":
+        # Normalizar 2.5–5.0 a 0.0–1.0
+        normalized = (consensus - 2.5) / (5.0 - 2.5)
+        normalized = max(0.0, min(1.0, normalized))
+
+        if normalized >= 0.80:   # ~4.5–5.0  Strong Buy
+            bg = "linear-gradient(135deg, #15803d, #22c55e)"   # Verde fuerte
+        elif normalized >= 0.60: # ~4.0–4.5  Buy alto
+            bg = "linear-gradient(135deg, #16a34a, #4ade80)"   # Verde suave
+        elif normalized >= 0.40: # ~3.5–4.0  Buy bajo
+            bg = "linear-gradient(135deg, #ca8a04, #facc15)"   # Amarillo
+        elif normalized >= 0.20: # ~3.0–3.5  Neutral alto
+            bg = "linear-gradient(135deg, #ea580c, #fb923c)"   # Naranja
+        else:                    # ~2.5–3.0  Neutral/Hold
+            bg = "linear-gradient(135deg, #dc2626, #f87171)"   # Rojo — Hold para Intraday es señal mala
+        return bg, label
+
+    # ── Interday / Gray Zone: colores normales ────────────────────────────
+    if consensus >= 4.5:
+        return "linear-gradient(135deg, #15803d, #22c55e)", label
+    if consensus >= 3.5:
+        return "linear-gradient(135deg, #16a34a, #4ade80)", label
+    if consensus >= 2.5:
+        return "linear-gradient(135deg, #ca8a04, #facc15)", label
+    if consensus >= 1.5:
+        return "linear-gradient(135deg, #ea580c, #fb923c)", label
+    return "linear-gradient(135deg, #dc2626, #f87171)", label
 
 
 def stock_style_from_dividends(row):
@@ -648,7 +681,7 @@ for result in results:
     row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
     with st.expander(f"{result['symbol']} Analysis", expanded=True):
 
-        consensus_bg, consensus_label = consensus_card_style(result["consensus_score"])
+        consensus_bg, consensus_label = consensus_card_style(result["consensus_score"], result["decision"])
         score_display = f"{result['consensus_score']:.2f}" if result["consensus_score"] is not None else "N/A"
 
         c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.1])
