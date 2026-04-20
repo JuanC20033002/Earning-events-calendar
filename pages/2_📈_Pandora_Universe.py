@@ -464,6 +464,91 @@ def show_full_universe_grade_dialog(dialog_df):
             height=400,
         )
 
+ANALYST_RATING_ORDER = ["Strong Buy", "Buy", "Neutral", "Sell", "Strong Sell", "N/A"]
+
+def numeric_to_analyst_label(val) -> str:
+    try:
+        v = float(str(val).strip().replace(",", ""))
+    except (ValueError, TypeError):
+        return "N/A"
+    if v >= 4.5: return "Strong Buy"
+    if v >= 3.5: return "Buy"
+    if v >= 2.5: return "Neutral"
+    if v >= 1.5: return "Sell"
+    return "Strong Sell"
+
+
+def build_analyst_matrix_df(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Construye el mismo dialog_df que usa la matriz, pero para Pandora Universe.
+    Lee los ratings directo del CSV original.
+    """
+    all_results = [build_stock_result(row, df) for _, row in df.iterrows()]
+
+    rows = []
+    for r in all_results:
+        raw_row = df[df["Symbol"].astype(str) == r["symbol"]].iloc[0]
+        rows.append({
+            "Symbol":       r["symbol"],
+            "Letter Grade": r["grade"],
+            "Overall Score": r["overall_score"],
+            "SA Analyst":   numeric_to_analyst_label(raw_row.get("SA Analyst Ratings")),
+            "Wall Street":  numeric_to_analyst_label(raw_row.get("Wall Street Ratings")),
+            "Quant":        numeric_to_analyst_label(raw_row.get("Quant Rating")),
+        })
+
+    result_df = pd.DataFrame(rows)
+    if result_df.empty:
+        return result_df
+
+    result_df["Letter Grade"] = pd.Categorical(
+        result_df["Letter Grade"], categories=GRADE_ORDER, ordered=True
+    )
+    return result_df
+
+
+@st.dialog("Pandora Universe – Analyst Rating × Letter Grade Matrix", width="large")
+def show_analyst_matrix_dialog_pandora(matrix_df: pd.DataFrame):
+    RATING_ROWS = ["Strong Buy", "Buy", "Neutral", "Sell", "Strong Sell", "N/A"]
+
+    analyst_cols = {
+        "SA Analyst":  "SA Analyst",
+        "Wall Street": "Wall Street",
+        "Quant":       "Quant",
+    }
+
+    for analyst_name, col in analyst_cols.items():
+        st.markdown(f"### {analyst_name}")
+
+        matrix_data = {}
+        for rating in RATING_ROWS:
+            row_stocks = matrix_df[matrix_df[col] == rating]
+            counts = row_stocks["Letter Grade"].value_counts()
+            matrix_data[rating] = {grade: int(counts.get(grade, 0)) for grade in GRADE_ORDER}
+
+        matrix_df_display = pd.DataFrame(matrix_data, index=GRADE_ORDER).T
+        matrix_df_display.index.name = f"{analyst_name} Rating ↓  /  Letter Grade →"
+        matrix_df_display["TOTAL"] = matrix_df_display.sum(axis=1)
+        matrix_df_display = matrix_df_display[matrix_df_display["TOTAL"] > 0]
+
+        if matrix_df_display.empty:
+            st.info(f"No data available for {analyst_name}.")
+            continue
+
+        def highlight_cells(val):
+            if isinstance(val, int) and val > 0:
+                return "background-color: #ccfbf1; font-weight: 600; color: #0f766e;"
+            return "color: #cbd5e1;"
+
+        styled = (
+            matrix_df_display.style
+            .map(highlight_cells)
+            .format(lambda x: str(x) if isinstance(x, int) else x)
+        )
+
+        st.dataframe(styled, use_container_width=True)
+        st.markdown("---")
+
 
 st.title("📈 Pandora Universe")
 st.markdown("Fundamental scoring framework for classifying stocks as Interday, Gray Zone, or Intraday Only.")
@@ -485,6 +570,11 @@ full_universe_dialog_df = build_full_universe_grade_dialog_df(df)
 
 if st.button("View Full Universe Letter Grades"):
     show_full_universe_grade_dialog(full_universe_dialog_df)
+
+analyst_matrix_df = build_analyst_matrix_df(df)
+
+if st.button("🔬 Analyst Rating × Grade Matrix"):
+    show_analyst_matrix_dialog_pandora(analyst_matrix_df)
 
 
 options = df["Symbol"].dropna().astype(str).sort_values().unique().tolist()
