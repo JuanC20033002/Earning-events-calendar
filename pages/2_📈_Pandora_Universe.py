@@ -250,6 +250,49 @@ def decision_from_grade(grade):
         return "Gray Zone"
     return "Intraday Only"
 
+def analyst_consensus_score(row) -> float | None:
+    """
+    Calcula un consensus score ponderado (1–5) con:
+      SA Analyst   35%
+      Wall Street  35%
+      Quant        30%
+    Si falta algún analista, redistribuye el peso entre los disponibles.
+    Retorna None si no hay ningún dato.
+    """
+    sources = [
+        (row.get("SA Analyst Ratings"),  0.35),
+        (row.get("Wall Street Ratings"), 0.35),
+        (row.get("Quant Rating"),        0.30),
+    ]
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for val, weight in sources:
+        x = parse_numeric(val)
+        if x is not None and 1.0 <= x <= 5.0:
+            weighted_sum += x * weight
+            total_weight += weight
+
+    if total_weight == 0:
+        return None
+    return weighted_sum / total_weight   # normalizado al peso real disponible
+
+
+def consensus_card_style(consensus: float | None) -> tuple[str, str]:
+    """
+    Retorna (background_css, label) según el consensus score.
+    """
+    if consensus is None:
+        return "linear-gradient(135deg, #64748b, #94a3b8)", "No Analyst Data"
+    if consensus >= 4.5:
+        return "linear-gradient(135deg, #15803d, #22c55e)", "Strong Buy"
+    if consensus >= 3.75:
+        return "linear-gradient(135deg, #16a34a, #4ade80)", "Buy"
+    if consensus >= 2.75:
+        return "linear-gradient(135deg, #ca8a04, #facc15)", "Neutral"
+    if consensus >= 1.75:
+        return "linear-gradient(135deg, #ea580c, #fb923c)", "Sell"
+    return "linear-gradient(135deg, #dc2626, #f87171)", "Strong Sell"
+
 
 def stock_style_from_dividends(row):
     y = parse_numeric(row.get("Yield TTM"))
@@ -322,6 +365,7 @@ def build_stock_result(row, df):
         "decision": decision,
         "stock_style": stock_style,
         "warnings": warning_messages(row),
+        "consensus_score": analyst_consensus_score(row),
     }
 
 
@@ -480,15 +524,42 @@ if len(results) > 1:
 for result in results:
     row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
     with st.expander(f"{result['symbol']} Analysis", expanded=True):
+
+        consensus_bg, consensus_label = consensus_card_style(result["consensus_score"])
+        score_display = f"{result['consensus_score']:.2f}" if result["consensus_score"] is not None else "N/A"
+
         c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.1])
         with c1:
-            st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['overall_score']:.1f}</div><div>Overall Score</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='score-card'>"
+                f"<div style='font-size:3rem;font-weight:700'>{result['overall_score']:.1f}</div>"
+                f"<div>Overall Score</div></div>",
+                unsafe_allow_html=True,
+            )
         with c2:
-            st.markdown(f"<div class='score-card'><div style='font-size:3rem;font-weight:700'>{result['grade']}</div><div>Letter Grade</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='score-card'>"
+                f"<div style='font-size:3rem;font-weight:700'>{result['grade']}</div>"
+                f"<div>Letter Grade</div></div>",
+                unsafe_allow_html=True,
+            )
         with c3:
-            st.markdown(f"<div class='score-card'><div style='font-size:2.3rem;font-weight:700'>{result['decision']}</div><div>Classification</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='score-card'>"
+                f"<div style='font-size:2.3rem;font-weight:700'>{result['decision']}</div>"
+                f"<div>Classification</div></div>",
+                unsafe_allow_html=True,
+            )
         with c4:
-            st.markdown(f"<div class='score-card'><div style='font-size:2.2rem;font-weight:700'>{result['stock_style']}</div><div>Stock Style</div></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div style='padding:1rem; border-radius:1rem; background:{consensus_bg}; "
+                f"color:white; text-align:center; margin-bottom:0.8rem;'>"
+                f"<div style='font-size:1.6rem;font-weight:700'>{consensus_label}</div>"
+                f"<div style='font-size:0.85rem;opacity:0.85'>Analyst Consensus ({score_display})</div>"
+                f"<div style='font-size:0.8rem;opacity:0.75;margin-top:2px'>{result['stock_style']}</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
 
         for box_type, msg in result["warnings"]:
             klass = "warning-box" if box_type == "warning" else "info-box"
