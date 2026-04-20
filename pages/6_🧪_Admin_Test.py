@@ -428,13 +428,13 @@ def show_analyst_matrix_dialog(dialog_df):
 
         styled = (
             matrix_df.style
-            .applymap(highlight_cells)
+            .map(highlight_cells)
             .format(lambda x: str(x) if isinstance(x, int) else x)
         )
 
         st.dataframe(styled, use_container_width=True)
         st.markdown("---")
-        
+
 @st.dialog("SP500 Test Universe – Grade Summary", width="large")
 def show_full_universe_dialog(dialog_df):
     # ── Sort selector ──────────────────────────────────────────────────────
