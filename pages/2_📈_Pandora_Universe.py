@@ -70,11 +70,17 @@ LETTER_MAP = {
 
 
 GRADE_BANDS = [
-    (95, "A+"), (90, "A"), (85, "A-"), (80, "B+"), (75, "B"), (70, "B-"),
-    (65, "C+"), (60, "C"), (55, "C-"), (50, "D+"), (45, "D"), (0, "D-")
+    (90, "A+"),
+    (80, "A"),
+    (70, "A-"),
+    (60, "B+"),
+    (50, "B"),
+    (40, "C"),
+    (0,  "D"),
 ]
 
-GRADE_ORDER = ["A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-"]
+GRADE_ORDER = ["A+", "A", "A-", "B+", "B", "C", "D"]
+
 
 
 st.set_page_config(page_title="Pandora Universe", page_icon="📈", layout="wide")
@@ -244,11 +250,12 @@ def grade_from_score(score):
 
 
 def decision_from_grade(grade):
-    if grade.startswith("A"):
+    if grade in {"A+", "A", "A-"}:
         return "Interday"
-    if grade.startswith("B"):
+    if grade in {"B+", "B"}:
         return "Gray Zone"
-    return "Intraday Only"
+    return "Intraday Only"   # C y D
+
 
 def analyst_consensus_score(row) -> float | None:
     """
