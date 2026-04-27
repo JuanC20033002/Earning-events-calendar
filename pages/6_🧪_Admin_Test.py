@@ -96,6 +96,70 @@ def numeric_to_analyst_label(val) -> str:
         return "Sell"
     return "Strong Sell"
 
+def analyst_consensus_score(row) -> float | None:
+    """
+    Consensus ponderado 50/50 entre SA Analyst y Wall Street.
+    Quant ignorado. Si falta uno, el otro toma el 100%.
+    """
+    sources = [
+        (row.get("SA Analyst Ratings"),  0.50),
+        (row.get("Wall Street Ratings"), 0.50),
+    ]
+    total_weight = 0.0
+    weighted_sum = 0.0
+    for val, weight in sources:
+        x = parse_numeric(val)
+        if x is not None and 1.0 <= x <= 5.0:
+            weighted_sum += x * weight
+            total_weight += weight
+    if total_weight == 0:
+        return None
+    return weighted_sum / total_weight
+
+
+def consensus_card_style(consensus: float | None, decision: str) -> tuple[str, str]:
+    if consensus is None:
+        return "linear-gradient(135deg, #64748b, #94a3b8)", "No Analyst Data"
+
+    if consensus >= 4.5:
+        label = "Strong Buy"
+    elif consensus >= 3.5:
+        label = "Buy"
+    elif consensus >= 2.5:
+        label = "Neutral"
+    elif consensus >= 1.5:
+        label = "Sell"
+    else:
+        label = "Strong Sell"
+
+    # Intraday Only: semáforo rojo→verde dentro del rango 2.5–5.0
+    if decision == "Intraday Only":
+        normalized = (consensus - 2.5) / (5.0 - 2.5)
+        normalized = max(0.0, min(1.0, normalized))
+        if normalized >= 0.80:
+            bg = "linear-gradient(135deg, #15803d, #22c55e)"
+        elif normalized >= 0.60:
+            bg = "linear-gradient(135deg, #16a34a, #4ade80)"
+        elif normalized >= 0.40:
+            bg = "linear-gradient(135deg, #ca8a04, #facc15)"
+        elif normalized >= 0.20:
+            bg = "linear-gradient(135deg, #ea580c, #fb923c)"
+        else:
+            bg = "linear-gradient(135deg, #dc2626, #f87171)"
+        return bg, label
+
+    # Interday / Gray Zone: colores normales
+    if consensus >= 4.5:
+        return "linear-gradient(135deg, #15803d, #22c55e)", label
+    if consensus >= 3.5:
+        return "linear-gradient(135deg, #16a34a, #4ade80)", label
+    if consensus >= 2.5:
+        return "linear-gradient(135deg, #ca8a04, #facc15)", label
+    if consensus >= 1.5:
+        return "linear-gradient(135deg, #ea580c, #fb923c)", label
+    return "linear-gradient(135deg, #dc2626, #f87171)", label
+
+
 ANALYST_LABEL_COLORS = {
     "Strong Buy": "#16a34a",
     "Buy": "#4ade80",
@@ -345,6 +409,7 @@ def build_stock_result(row, df):
         "sa_rating_raw": row.get("SA Analyst Ratings"),
         "ws_rating_raw": row.get("Wall Street Ratings"),
         "quant_rating_raw": row.get("Quant Rating"),
+        "consensus_score": analyst_consensus_score(row),
     }
 
 # ── Charts (same as Pandora Universe) ─────────────────────────────────────
