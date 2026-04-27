@@ -246,20 +246,54 @@ def stock_style_from_dividends(row):
 
 def warning_messages(row):
     msgs = []
+
+    # ── Earnings proximity (gradiente de urgencia) ─────────────────────
     upcoming = parse_date(row.get("Upcoming Announce Date"))
     previous = parse_date(row.get("Last Quarter Announce Date"))
+
     if pd.notna(upcoming):
         days_to = (upcoming.normalize() - TODAY).days
-        if 0 <= days_to <= 10:
-            msgs.append(("warning", f"Upcoming earnings in {days_to} day(s): {upcoming.strftime('%Y-%m-%d')}"))
+        if 0 <= days_to <= 3:
+            msgs.append(("critical", f"⚠️ Earnings in {days_to} day(s) — high volatility imminent: {upcoming.strftime('%Y-%m-%d')}"))
+        elif 0 <= days_to <= 7:
+            msgs.append(("warning", f"📅 Earnings in {days_to} days — monitor position closely: {upcoming.strftime('%Y-%m-%d')}"))
+        elif 0 <= days_to <= 10:
+            msgs.append(("mild", f"📅 Earnings approaching in {days_to} days: {upcoming.strftime('%Y-%m-%d')}"))
         else:
             msgs.append(("info", f"Next earnings date: {upcoming.strftime('%Y-%m-%d')}"))
+
     if pd.notna(previous):
         days_since = (TODAY - previous.normalize()).days
         if 0 <= days_since <= 10:
             msgs.append(("warning", f"Previous earnings were {days_since} day(s) ago: {previous.strftime('%Y-%m-%d')}"))
         else:
             msgs.append(("info", f"Previous earnings date: {previous.strftime('%Y-%m-%d')}"))
+
+    # ── Críticos (rojo) ────────────────────────────────────────────────
+    eps_fwd = parse_numeric(row.get("EPS Growth (FWD)"))
+    if eps_fwd is not None and eps_fwd < 0:
+        msgs.append(("critical", "📉 Next earnings estimate is negative — expected EPS decline ahead"))
+
+    eps_surprise = parse_numeric(row.get("EPS Surprise"))
+    if eps_surprise is not None and eps_surprise < 0:
+        msgs.append(("critical", "❌ Last quarter missed expectations — earnings came in below estimates"))
+
+    rev_fwd = parse_numeric(row.get("Revenue FWD"))
+    if rev_fwd is not None and rev_fwd < 0:
+        msgs.append(("critical", "📉 Forward revenue is projected to decline next quarter"))
+
+    profit_margin = parse_numeric(row.get("Profit Margin"))
+    if profit_margin is not None and profit_margin < 0:
+        msgs.append(("critical", "🚨 Company is currently operating at a loss"))
+
+    # ── Moderados (amarillo) ───────────────────────────────────────────
+    pe_fwd = parse_numeric(row.get("P/E FWD"))
+    if pe_fwd is not None and pe_fwd > 0:
+        if pe_fwd > 100:
+            msgs.append(("warning", "🔺 Extremely overvalued — stock is trading at a speculative premium"))
+        elif pe_fwd > 50:
+            msgs.append(("warning", "⚠️ Stock appears overvalued — elevated valuation increases correction risk"))
+
     return msgs
 
 # ── Data loader ────────────────────────────────────────────────────────────
@@ -559,7 +593,10 @@ if len(results) > 1:
 for result in results:
     row = selected_df[selected_df["Symbol"].astype(str) == result["symbol"]].iloc[0]
     with st.expander(f"{result['symbol']} Analysis", expanded=True):
-        # Score cards row
+
+        consensus_bg, consensus_label = consensus_card_style(result["consensus_score"], result["decision"])
+        score_display = f"{result['consensus_score']:.2f}" if result["consensus_score"] is not None else "N/A"
+
         c1, c2, c3, c4 = st.columns([1, 1, 1.2, 1.1])
         with c1:
             st.markdown(
@@ -584,13 +621,16 @@ for result in results:
             )
         with c4:
             st.markdown(
-                f"<div class='score-card'>"
-                f"<div style='font-size:2.2rem;font-weight:700'>{result['stock_style']}</div>"
-                f"<div>Stock Style</div></div>",
+                f"<div style='padding:1rem; border-radius:1rem; background:{consensus_bg}; "
+                f"color:white; text-align:center; margin-bottom:0.8rem;'>"
+                f"<div style='font-size:1.6rem;font-weight:700'>{consensus_label}</div>"
+                f"<div style='font-size:0.85rem;opacity:0.85'>Analyst Consensus ({score_display})</div>"
+                f"<div style='font-size:0.8rem;opacity:0.75;margin-top:2px'>{result['stock_style']}</div>"
+                f"</div>",
                 unsafe_allow_html=True,
             )
 
-        # Analyst ratings row
+        # ── Analyst rating chips ───────────────────────────────────────
         st.markdown("#### Analyst Ratings")
         a1, a2, a3 = st.columns(3)
         for col_widget, label, raw_val in [
@@ -611,23 +651,44 @@ for result in results:
                     unsafe_allow_html=True,
                 )
 
-        st.markdown("")  # spacing
+        st.markdown("")
 
-        # Warnings
+        # ── Warnings ──────────────────────────────────────────────────
         for box_type, msg in result["warnings"]:
-            klass = "warning-box" if box_type == "warning" else "info-box"
-            st.markdown(f"<div class='{klass}'>{msg}</div>", unsafe_allow_html=True)
+            if box_type == "critical":
+                st.markdown(
+                    f"<div style='padding:0.85rem 1rem; border-radius:0.75rem; margin-bottom:0.6rem; "
+                    f"border-left:6px solid #dc2626; background:#fef2f2; color:#7f1d1d;'>{msg}</div>",
+                    unsafe_allow_html=True,
+                )
+            elif box_type == "warning":
+                st.markdown(
+                    f"<div style='padding:0.85rem 1rem; border-radius:0.75rem; margin-bottom:0.6rem; "
+                    f"border-left:6px solid #f59e0b; background:#fffbeb; color:#92400e;'>{msg}</div>",
+                    unsafe_allow_html=True,
+                )
+            elif box_type == "mild":
+                st.markdown(
+                    f"<div style='padding:0.85rem 1rem; border-radius:0.75rem; margin-bottom:0.6rem; "
+                    f"border-left:6px solid #facc15; background:#fefce8; color:#713f12;'>{msg}</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"<div class='info-box'>{msg}</div>",
+                    unsafe_allow_html=True,
+                )
 
-        # Section chart
+        # ── Section chart ──────────────────────────────────────────────
         st.plotly_chart(make_single_stock_section_chart(result), use_container_width=True)
 
-        # Section metrics
+        # ── Section metrics ────────────────────────────────────────────
         sec_cols = st.columns(4)
         for idx, section in enumerate(SECTION_WEIGHTS.keys()):
             with sec_cols[idx]:
                 st.metric(section, f"{result['section_scores'][section]:.1f}")
 
-        # Detailed breakdown
+        # ── Section breakdown ──────────────────────────────────────────
         st.markdown("### Section Breakdown")
         for section in SECTION_WEIGHTS.keys():
             breakdown_df = pd.DataFrame(result["section_breakdowns"][section])
