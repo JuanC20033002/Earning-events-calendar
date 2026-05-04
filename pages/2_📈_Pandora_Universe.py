@@ -558,6 +558,43 @@ def show_analyst_matrix_dialog_pandora(matrix_df: pd.DataFrame):
 st.title("📈 Pandora Universe")
 st.markdown("Fundamental scoring framework for classifying stocks as Interday, Gray Zone, or Intraday Only.")
 
+with st.expander("📊 Scoring Scale Reference", expanded=False):
+    scale_data = {
+        "Grade": ["A+", "A", "A-", "B+", "B", "C", "D"],
+        "Score Range": ["90 – 100", "80 – 89", "70 – 79", "60 – 69", "50 – 59", "40 – 49", "0 – 39"],
+        "Classification": [
+            "Interday", "Interday", "Interday",
+            "Gray Zone", "Gray Zone",
+            "Intraday Only", "Intraday Only"
+        ],
+    }
+    scale_df = pd.DataFrame(scale_data)
+
+    def color_classification(val):
+        if val == "Interday":
+            return "background-color: #d1fae5; color: #065f46; font-weight: 700;"
+        if val == "Gray Zone":
+            return "background-color: #dbeafe; color: #1e3a8a; font-weight: 700;"
+        return "background-color: #fee2e2; color: #7f1d1d; font-weight: 700;"
+
+    def color_grade(val):
+        colors = {
+            "A+": "#065f46", "A": "#047857", "A-": "#059669",
+            "B+": "#1d4ed8", "B": "#2563eb",
+            "C": "#b45309",
+            "D": "#b91c1c",
+        }
+        c = colors.get(val, "#374151")
+        return f"color: {c}; font-weight: 800; font-size: 1rem;"
+
+    styled_scale = (
+        scale_df.style
+        .map(color_classification, subset=["Classification"])
+        .map(color_grade, subset=["Grade"])
+    )
+
+    st.dataframe(styled_scale, use_container_width=True, hide_index=True)
+    
 try:
     df = load_data()
 except Exception as e:
